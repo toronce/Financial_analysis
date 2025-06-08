@@ -601,10 +601,15 @@
             if (usageElement) {
                 usageElement.textContent = apiUsageCount;
                 
-                if (apiUsageCount > 20) {
+                if (apiUsageCount >= 25) {
                     usageElement.className = 'font-semibold text-red-600';
-                } else if (apiUsageCount > 15) {
+                    showError('⚠️ 일일 API 호출 한도(25회)에 도달했습니다. 내일 다시 시도하거나 새로운 API 키를 발급받으세요.');
+                } else if (apiUsageCount >= 20) {
+                    usageElement.className = 'font-semibold text-red-600';
+                    showError('⚠️ 일일 API 호출 한도가 거의 소진되었습니다. (현재: ' + apiUsageCount + '/25)');
+                } else if (apiUsageCount >= 15) {
                     usageElement.className = 'font-semibold text-yellow-600';
+                    showError('⚠️ 일일 API 호출 한도가 많이 소진되었습니다. (현재: ' + apiUsageCount + '/25)');
                 } else {
                     usageElement.className = 'font-semibold text-blue-600';
                 }
@@ -635,16 +640,23 @@
             if (errorDiv && errorText) {
                 // API 키 관련 오류에 대해 추가 안내 포함
                 if (message.includes('API 키가 유효하지 않') || message.includes('Invalid API call')) {
-                    message += `<br><span class="block mt-2 text-sm">💡 API 키가 올바른지 확인하거나, <a href="https://www.alphavantage.co/support/#api-key" target="_blank" class="underline">새 키를 발급</a>받아보세요.</span>`;
+                    message += `<br><span class="block mt-2 text-sm">💡 다음 중 하나를 시도해보세요:</span>
+                        <ul class="list-disc list-inside mt-1 text-sm">
+                            <li><a href="https://www.alphavantage.co/support/#api-key" target="_blank" class="underline">새로운 API 키 발급받기</a></li>
+                            <li>다른 API 키로 변경하기</li>
+                            <li>24시간 후에 다시 시도하기</li>
+                        </ul>`;
                 }
                 
-                // CORS 관련 오류에 대한 안내
-                if (message.includes('Failed to fetch') || message.includes('Network Error') || message.includes('CORS')) {
-                    message += `<br><span class="block mt-2 text-sm">💡 CORS 정책으로 인한 오류일 수 있습니다. <a href="https://cors-anywhere.herokuapp.com/corsdemo" target="_blank" class="underline">CORS Anywhere 허용</a>을 활성화하세요.</span>`;
+                // API 사용량 초과 관련 오류
+                if (message.includes('API call frequency') || message.includes('rate limit')) {
+                    message += `<br><span class="block mt-2 text-sm">💡 무료 API는 일일 25회로 제한됩니다. 다음 중 하나를 시도해보세요:</span>
+                        <ul class="list-disc list-inside mt-1 text-sm">
+                            <li>24시간 후에 다시 시도하기</li>
+                            <li><a href="https://www.alphavantage.co/support/#api-key" target="_blank" class="underline">새로운 API 키 발급받기</a></li>
+                            <li><a href="https://www.alphavantage.co/premium/" target="_blank" class="underline">프리미엄 플랜 구독하기</a></li>
+                        </ul>`;
                 }
-                
-                // 개발자 도구 안내
-                message += `<br><span class="block mt-2 text-xs opacity-80">자세한 오류는 개발자 도구(F12)의 콘솔 탭에서 확인하세요.</span>`;
                 
                 errorText.innerHTML = message;
                 errorDiv.classList.remove('hidden');
