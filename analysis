@@ -1,0 +1,895 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+    <title>재무제표 분석기</title>
+    
+    <!-- CSS 라이브러리 -->
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/tailwindcss/2.2.19/tailwind.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    
+    <!-- JavaScript 라이브러리 -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
+    
+    <style>
+        .hidden { display: none !important; }
+        .animate-spin {
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+        .ratio-card {
+            transition: all 0.3s ease;
+        }
+        .ratio-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 25px rgba(0,0,0,0.1);
+        }
+        
+        /* 모바일 최적화 */
+        @media (max-width: 768px) {
+            .grid-cols-3 { grid-template-columns: repeat(1, minmax(0, 1fr)); }
+            .text-3xl { font-size: 1.5rem; }
+            .p-8 { padding: 1rem; }
+        }
+        
+        /* PWA 지원 */
+        .pwa-install {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            z-index: 1000;
+        }
+    </style>
+</head>
+
+<body class="bg-gray-50 min-h-screen">
+    <!-- PWA 설치 버튼 -->
+    <button id="installBtn" class="pwa-install hidden bg-blue-600 text-white p-3 rounded-full shadow-lg">
+        <i class="fas fa-download"></i>
+    </button>
+
+    <div class="container mx-auto p-4 max-w-7xl">
+        <!-- 헤더 -->
+        <header class="text-center mb-8">
+            <h1 class="text-3xl font-bold text-gray-800 mb-2">
+                <i class="fas fa-chart-line text-blue-600 mr-2"></i>
+                재무제표 분석기
+            </h1>
+            <p class="text-gray-600">Excel, CSV 파일을 업로드하여 자동으로 재무 분석을 받아보세요</p>
+            <div class="mt-2 text-sm text-gray-500">
+                📱 모바일 최적화 | 🔍 실시간 분석 | 📊 차트 지원
+            </div>
+        </header>
+
+        <!-- 탭 메뉴 -->
+        <div class="flex flex-wrap bg-white rounded-lg shadow-md mb-6 overflow-hidden">
+            <button onclick="showTab('upload')" id="tab-upload" 
+                    class="flex-1 min-w-0 py-3 px-4 text-sm font-medium bg-blue-600 text-white border-r border-gray-200 transition-colors">
+                <i class="fas fa-upload mr-1"></i>
+                <span class="hidden sm:inline">파일 </span>업로드
+            </button>
+            <button onclick="showTab('data')" id="tab-data" 
+                    class="flex-1 min-w-0 py-3 px-4 text-sm font-medium text-gray-600 hover:bg-gray-50 border-r border-gray-200 transition-colors">
+                <i class="fas fa-table mr-1"></i>
+                <span class="hidden sm:inline">데이터 </span>확인
+            </button>
+            <button onclick="showTab('analysis')" id="tab-analysis" 
+                    class="flex-1 min-w-0 py-3 px-4 text-sm font-medium text-gray-600 hover:bg-gray-50 border-r border-gray-200 transition-colors">
+                <i class="fas fa-calculator mr-1"></i>
+                <span class="hidden sm:inline">재무 </span>분석
+            </button>
+            <button onclick="showTab('charts')" id="tab-charts" 
+                    class="flex-1 min-w-0 py-3 px-4 text-sm font-medium text-gray-600 hover:bg-gray-50 transition-colors">
+                <i class="fas fa-chart-bar mr-1"></i>
+                <span class="hidden sm:inline">차트 </span>분석
+            </button>
+        </div>
+
+        <!-- 파일 업로드 탭 -->
+        <div id="content-upload" class="bg-white rounded-lg shadow-lg p-8">
+            <div class="text-center">
+                <div class="text-6xl mb-4">📤</div>
+                <h3 class="text-xl font-semibold mb-2">재무제표 파일 업로드</h3>
+                <p class="text-gray-600 mb-6">Excel (.xlsx, .xls) 또는 CSV 파일을 선택해주세요</p>
+                
+                <!-- 파일 업로드 영역 -->
+                <div class="border-2 border-dashed border-gray-300 rounded-lg p-8 mb-6 hover:border-blue-400 transition-colors"
+                     ondrop="handleDrop(event)" ondragover="handleDragOver(event)" ondragleave="handleDragLeave(event)">
+                    <input type="file" accept=".xlsx,.xls,.csv" onchange="handleFileUpload(event)" 
+                           id="file-upload" class="hidden">
+                    <label for="file-upload" class="cursor-pointer">
+                        <div class="text-gray-500 mb-2">
+                            <i class="fas fa-cloud-upload-alt text-3xl mb-2"></i>
+                            <p>파일을 여기에 드래그하거나 클릭하여 선택하세요</p>
+                        </div>
+                    </label>
+                    <button onclick="document.getElementById('file-upload').click()" 
+                            class="mt-4 px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
+                        <i class="fas fa-folder-open mr-2"></i>파일 선택
+                    </button>
+                </div>
+                
+                <!-- 로딩 -->
+                <div id="loading" class="hidden">
+                    <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto"></div>
+                    <p class="text-gray-600 mt-2">파일 처리 중...</p>
+                </div>
+                
+                <!-- 샘플 데이터 버튼 -->
+                <div class="mb-6">
+                    <button onclick="loadSampleData()" 
+                            class="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors">
+                        <i class="fas fa-play mr-2"></i>샘플 데이터로 체험하기
+                    </button>
+                </div>
+                
+                <!-- 가이드 -->
+                <div class="grid md:grid-cols-2 gap-6 text-left">
+                    <div>
+                        <h4 class="font-semibold mb-3 text-blue-800">
+                            <i class="fas fa-file-alt mr-2"></i>지원 파일 형식
+                        </h4>
+                        <ul class="text-sm text-gray-600 space-y-2">
+                            <li><i class="fas fa-check text-green-500 mr-2"></i>Excel 파일 (.xlsx, .xls)</li>
+                            <li><i class="fas fa-check text-green-500 mr-2"></i>CSV 파일 (.csv)</li>
+                            <li><i class="fas fa-info-circle text-blue-500 mr-2"></i>최대 파일 크기: 10MB</li>
+                        </ul>
+                    </div>
+                    
+                    <div>
+                        <h4 class="font-semibold mb-3 text-green-800">
+                            <i class="fas fa-database mr-2"></i>예상 데이터 구조
+                        </h4>
+                        <ul class="text-sm text-gray-600 space-y-1">
+                            <li><strong>연도</strong>: 분석할 연도</li>
+                            <li><strong>매출액</strong>: 회사가 판매해서 번 총 금액</li>
+                            <li><strong>영업이익</strong>: 본업에서 번 이익</li>
+                            <li><strong>순이익</strong>: 최종 이익</li>
+                            <li><strong>총자산</strong>: 회사가 가진 모든 재산</li>
+                            <li><strong>부채</strong>: 갚아야 할 빚</li>
+                            <li><strong>자본</strong>: 주주 투자금 + 이익</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 데이터 확인 탭 -->
+        <div id="content-data" class="hidden bg-white rounded-lg shadow-lg p-6">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-xl font-semibold">
+                    <i class="fas fa-table text-blue-600 mr-2"></i>업로드된 데이터
+                </h3>
+                <button onclick="exportData()" id="exportBtn" class="hidden px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors">
+                    <i class="fas fa-download mr-2"></i>Excel로 내보내기
+                </button>
+            </div>
+            <div id="data-table" class="overflow-x-auto">
+                <div class="text-center py-12 text-gray-500">
+                    <i class="fas fa-inbox text-4xl mb-4"></i>
+                    <p>파일을 업로드하면 데이터가 여기에 표시됩니다.</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- 재무 분석 탭 -->
+        <div id="content-analysis" class="hidden space-y-6">
+            <!-- 요약 카드 -->
+            <div id="summary-card" class="bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-lg p-6 hidden">
+                <h3 class="text-xl font-semibold mb-4">📊 종합 분석 요약</h3>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4" id="summary-content">
+                    <!-- 동적으로 생성 -->
+                </div>
+            </div>
+
+            <!-- 수익성 분석 -->
+            <div class="bg-white rounded-lg shadow-lg p-6">
+                <h3 class="text-xl font-semibold mb-4">
+                    <i class="fas fa-chart-line text-green-600 mr-2"></i>수익성 분석
+                </h3>
+                <div class="bg-blue-50 p-4 rounded-lg mb-6">
+                    <h4 class="font-semibold text-blue-800 mb-2">💡 수익성이란?</h4>
+                    <p class="text-blue-700 text-sm">
+                        기업이 얼마나 효율적으로 돈을 벌고 있는지를 보여주는 지표입니다. 
+                        같은 매출이라도 비용을 적게 쓰고 더 많은 이익을 내는 회사가 수익성이 좋은 회사입니다.
+                    </p>
+                </div>
+                <div id="profitability-cards" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    <!-- 동적으로 생성 -->
+                </div>
+            </div>
+
+            <!-- 유동성 분석 -->
+            <div class="bg-white rounded-lg shadow-lg p-6">
+                <h3 class="text-xl font-semibold mb-4">
+                    <i class="fas fa-tint text-blue-600 mr-2"></i>유동성 분석
+                </h3>
+                <div class="bg-green-50 p-4 rounded-lg mb-6">
+                    <h4 class="font-semibold text-green-800 mb-2">💰 유동성이란?</h4>
+                    <p class="text-green-700 text-sm">
+                        회사가 단기간에 현금을 마련할 수 있는 능력입니다. 
+                        급하게 돈이 필요할 때 자산을 현금으로 바꿀 수 있는지, 빚을 갚을 수 있는지를 보여줍니다.
+                    </p>
+                </div>
+                <div id="liquidity-cards" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    <!-- 동적으로 생성 -->
+                </div>
+            </div>
+
+            <!-- 안정성 분석 -->
+            <div class="bg-white rounded-lg shadow-lg p-6">
+                <h3 class="text-xl font-semibold mb-4">
+                    <i class="fas fa-shield-alt text-purple-600 mr-2"></i>안정성 분석
+                </h3>
+                <div class="bg-purple-50 p-4 rounded-lg mb-6">
+                    <h4 class="font-semibold text-purple-800 mb-2">🛡️ 안정성이란?</h4>
+                    <p class="text-purple-700 text-sm">
+                        회사가 빚에 의존하지 않고 안전하게 운영되고 있는지를 보여줍니다. 
+                        빚이 너무 많으면 이자 부담이 커져서 위험할 수 있어요.
+                    </p>
+                </div>
+                <div id="stability-cards" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    <!-- 동적으로 생성 -->
+                </div>
+            </div>
+        </div>
+
+        <!-- 차트 분석 탭 -->
+        <div id="content-charts" class="hidden space-y-6">
+            <div class="bg-white rounded-lg shadow-lg p-6">
+                <h3 class="text-xl font-semibold mb-4">
+                    <i class="fas fa-chart-area text-indigo-600 mr-2"></i>재무 추세 분석
+                </h3>
+                <div class="relative" style="height: 400px;">
+                    <canvas id="trendChart"></canvas>
+                </div>
+            </div>
+            
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <div class="bg-white rounded-lg shadow-lg p-6">
+                    <h3 class="text-xl font-semibold mb-4">
+                        <i class="fas fa-percentage text-green-600 mr-2"></i>수익성 지표
+                    </h3>
+                    <div class="relative" style="height: 300px;">
+                        <canvas id="profitChart"></canvas>
+                    </div>
+                </div>
+                
+                <div class="bg-white rounded-lg shadow-lg p-6">
+                    <h3 class="text-xl font-semibold mb-4">
+                        <i class="fas fa-balance-scale text-blue-600 mr-2"></i>안정성 지표
+                    </h3>
+                    <div class="relative" style="height: 300px;">
+                        <canvas id="stabilityChart"></canvas>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 푸터 -->
+    <footer class="bg-white border-t mt-12 py-6">
+        <div class="container mx-auto px-4 text-center text-gray-600">
+            <p class="mb-2">
+                <i class="fas fa-chart-line text-blue-600 mr-2"></i>
+                재무제표 분석기 - 무료 재무 분석 도구
+            </p>
+            <p class="text-sm">
+                GitHub Pages로 제공 | 
+                <a href="https://github.com" target="_blank" class="text-blue-600 hover:underline">
+                    <i class="fab fa-github mr-1"></i>소스코드
+                </a>
+            </p>
+        </div>
+    </footer>
+
+    <script>
+        // 전역 변수
+        let uploadedData = null;
+        let analysisData = null;
+        let charts = {};
+
+        // PWA 설치 지원
+        let deferredPrompt;
+        window.addEventListener('beforeinstallprompt', (e) => {
+            deferredPrompt = e;
+            document.getElementById('installBtn').classList.remove('hidden');
+        });
+
+        document.getElementById('installBtn').addEventListener('click', async () => {
+            if (deferredPrompt) {
+                deferredPrompt.prompt();
+                const { outcome } = await deferredPrompt.userChoice;
+                deferredPrompt = null;
+                document.getElementById('installBtn').classList.add('hidden');
+            }
+        });
+
+        // 탭 전환 기능
+        function showTab(tabName) {
+            const tabs = ['upload', 'data', 'analysis', 'charts'];
+            
+            tabs.forEach(tab => {
+                const tabBtn = document.getElementById(`tab-${tab}`);
+                const content = document.getElementById(`content-${tab}`);
+                
+                if (tab === tabName) {
+                    tabBtn.className = 'flex-1 min-w-0 py-3 px-4 text-sm font-medium bg-blue-600 text-white border-r border-gray-200 transition-colors';
+                    content.classList.remove('hidden');
+                } else {
+                    tabBtn.className = 'flex-1 min-w-0 py-3 px-4 text-sm font-medium text-gray-600 hover:bg-gray-50 border-r border-gray-200 transition-colors';
+                    content.classList.add('hidden');
+                }
+            });
+        }
+
+        // 드래그 앤 드롭 처리
+        function handleDragOver(e) {
+            e.preventDefault();
+            e.currentTarget.classList.add('border-blue-400', 'bg-blue-50');
+        }
+
+        function handleDragLeave(e) {
+            e.currentTarget.classList.remove('border-blue-400', 'bg-blue-50');
+        }
+
+        function handleDrop(e) {
+            e.preventDefault();
+            e.currentTarget.classList.remove('border-blue-400', 'bg-blue-50');
+            
+            const files = e.dataTransfer.files;
+            if (files.length > 0) {
+                processFile(files[0]);
+            }
+        }
+
+        // 파일 업로드 처리
+        function handleFileUpload(event) {
+            const file = event.target.files[0];
+            if (file) {
+                processFile(file);
+            }
+        }
+
+        // 파일 처리 함수
+        async function processFile(file) {
+            // 파일 크기 체크 (10MB)
+            if (file.size > 10 * 1024 * 1024) {
+                alert('파일 크기가 너무 큽니다. 10MB 이하의 파일을 선택해주세요.');
+                return;
+            }
+
+            showLoading(true);
+
+            try {
+                let parsedData;
+
+                if (file.name.endsWith('.xlsx') || file.name.endsWith('.xls')) {
+                    const arrayBuffer = await file.arrayBuffer();
+                    const workbook = XLSX.read(arrayBuffer);
+                    const sheetName = workbook.SheetNames[0];
+                    const worksheet = workbook.Sheets[sheetName];
+                    parsedData = XLSX.utils.sheet_to_json(worksheet);
+                } else if (file.name.endsWith('.csv')) {
+                    const text = await file.text();
+                    const result = Papa.parse(text, { 
+                        header: true, 
+                        dynamicTyping: true,
+                        skipEmptyLines: true
+                    });
+                    parsedData = result.data;
+                } else {
+                    throw new Error('지원하지 않는 파일 형식입니다. Excel 또는 CSV 파일을 선택해주세요.');
+                }
+
+                if (!parsedData || parsedData.length === 0) {
+                    throw new Error('파일에 데이터가 없습니다.');
+                }
+
+                uploadedData = parsedData;
+                displayData(parsedData);
+                analyzeData(parsedData);
+                
+                // 분석 탭으로 이동
+                showTab('analysis');
+                
+                alert(`✅ 파일 업로드 완료!\n📊 ${parsedData.length}개 행의 데이터를 분석했습니다.`);
+                
+            } catch (error) {
+                console.error('파일 처리 오류:', error);
+                alert('❌ ' + error.message);
+            }
+
+            showLoading(false);
+        }
+
+        // 샘플 데이터 로드
+        function loadSampleData() {
+            const sampleData = [
+                { 연도: 2021, 매출액: 1000, 영업이익: 150, 순이익: 120, 총자산: 1500, 부채: 600, 자본: 900, 현금: 200, 유동자산: 500, 유동부채: 300 },
+                { 연도: 2022, 매출액: 1200, 영업이익: 180, 순이익: 140, 총자산: 1700, 부채: 650, 자본: 1050, 현금: 250, 유동자산: 600, 유동부채: 320 },
+                { 연도: 2023, 매출액: 1400, 영업이익: 210, 순이익: 170, 총자산: 1900, 부채: 700, 자본: 1200, 현금: 300, 유동자산: 700, 유동부채: 350 },
+                { 연도: 2024, 매출액: 1600, 영업이익: 240, 순이익: 200, 총자산: 2100, 부채: 750, 자본: 1350, 현금: 350, 유동자산: 800, 유동부채: 380 }
+            ];
+
+            uploadedData = sampleData;
+            displayData(sampleData);
+            analyzeData(sampleData);
+            showTab('analysis');
+            
+            alert('📊 샘플 데이터를 로드했습니다!\n이제 분석 결과를 확인해보세요.');
+        }
+
+        // 로딩 표시
+        function showLoading(show) {
+            const loading = document.getElementById('loading');
+            if (show) {
+                loading.classList.remove('hidden');
+            } else {
+                loading.classList.add('hidden');
+            }
+        }
+
+        // 데이터 표시
+        function displayData(data) {
+            if (!data || data.length === 0) return;
+
+            const headers = Object.keys(data[0]);
+            let tableHtml = `
+                <div class="overflow-x-auto">
+                    <table class="min-w-full divide-y divide-gray-200">
+                        <thead class="bg-gray-50">
+                            <tr>
+            `;
+
+            headers.forEach(header => {
+                tableHtml += `<th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">${header}</th>`;
+            });
+
+            tableHtml += `
+                            </tr>
+                        </thead>
+                        <tbody class="bg-white divide-y divide-gray-200">
+            `;
+
+            data.slice(0, 20).forEach((row, idx) => {
+                tableHtml += `<tr class="${idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}">`;
+                headers.forEach(header => {
+                    const value = row[header];
+                    const displayValue = typeof value === 'number' ? 
+                        value.toLocaleString() : 
+                        (value || '');
+                    tableHtml += `<td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${displayValue}</td>`;
+                });
+                tableHtml += `</tr>`;
+            });
+
+            tableHtml += `
+                        </tbody>
+                    </table>
+                </div>
+            `;
+
+            if (data.length > 20) {
+                tableHtml += `<p class="text-gray-600 mt-4 text-center">총 ${data.length}개 행 중 처음 20개 행을 표시합니다.</p>`;
+            }
+
+            document.getElementById('data-table').innerHTML = tableHtml;
+            document.getElementById('exportBtn').classList.remove('hidden');
+        }
+
+        // 재무 분석
+        function analyzeData(data) {
+            if (!data || data.length === 0) return;
+
+            // 최신 연도 데이터 사용
+            const latestData = data[data.length - 1];
+            
+            // 기본값 설정
+            const revenue = latestData['매출액'] || latestData['Revenue'] || 0;
+            const operatingProfit = latestData['영업이익'] || latestData['Operating Profit'] || 0;
+            const netIncome = latestData['순이익'] || latestData['Net Income'] || 0;
+            const totalAssets = latestData['총자산'] || latestData['Total Assets'] || 0;
+            const totalDebt = latestData['부채'] || latestData['Total Debt'] || 0;
+            const equity = latestData['자본'] || latestData['Equity'] || 0;
+            const currentAssets = latestData['유동자산'] || latestData['Current Assets'] || totalAssets * 0.4;
+            const currentLiabilities = latestData['유동부채'] || latestData['Current Liabilities'] || totalDebt * 0.6;
+            const cash = latestData['현금'] || latestData['Cash'] || currentAssets * 0.3;
+
+            // 재무비율 계산
+            const analysis = {
+                profitability: {
+                    grossProfitMargin: revenue > 0 ? ((revenue - revenue * 0.6) / revenue * 100) : 0,
+                    operatingMargin: revenue > 0 ? (operatingProfit / revenue * 100) : 0,
+                    netProfitMargin: revenue > 0 ? (netIncome / revenue * 100) : 0,
+                    roe: equity > 0 ? (netIncome / equity * 100) : 0,
+                    roa: totalAssets > 0 ? (netIncome / totalAssets * 100) : 0
+                },
+                liquidity: {
+                    currentRatio: currentLiabilities > 0 ? (currentAssets / currentLiabilities) : 0,
+                    quickRatio: currentLiabilities > 0 ? ((currentAssets - currentAssets * 0.3) / currentLiabilities) : 0,
+                    cashRatio: currentLiabilities > 0 ? (cash / currentLiabilities) : 0
+                },
+                stability: {
+                    debtToEquity: equity > 0 ? (totalDebt / equity) : 0,
+                    debtToAssets: totalAssets > 0 ? (totalDebt / totalAssets) : 0,
+                    interestCoverage: operatingProfit > 0 ? (operatingProfit / (totalDebt * 0.05)) : 0
+                },
+                trends: data.map(row => ({
+                    year: row['연도'] || row['Year'] || '',
+                    revenue: row['매출액'] || row['Revenue'] || 0,
+                    profit: row['순이익'] || row['Net Income'] || 0,
+                    assets: row['총자산'] || row['Total Assets'] || 0
+                }))
+            };
+
+            analysisData = analysis;
+            displayAnalysis(analysis);
+            createCharts(analysis);
+        }
+
+        // 분석 결과 표시
+        function displayAnalysis(analysis) {
+            displaySummary(analysis);
+            displayRatioCards('profitability-cards', [
+                { title: '매출총이익률', value: analysis.profitability.grossProfitMargin, unit: '%', good: 25, excellent: 40, description: '매출에서 원가를 뺀 이익의 비율. 높을수록 상품/서비스의 경쟁력이 좋음' },
+                { title: '영업이익률', value: analysis.profitability.operatingMargin, unit: '%', good: 10, excellent: 20, description: '본업에서 얼마나 이익을 내는지 보여줌. 회사의 핵심 사업 경쟁력을 나타냄' },
+                { title: '순이익률', value: analysis.profitability.netProfitMargin, unit: '%', good: 8, excellent: 15, description: '모든 비용을 빼고 남은 최종 이익률. 실제로 주주에게 돌아가는 이익' },
+                { title: 'ROE (자기자본이익률)', value: analysis.profitability.roe, unit: '%', good: 12, excellent: 20, description: '주주가 투자한 돈으로 얼마나 이익을 냈는지. 투자 효율성을 보여줌' },
+                { title: 'ROA (총자산이익률)', value: analysis.profitability.roa, unit: '%', good: 6, excellent: 12, description: '회사가 가진 모든 자산으로 얼마나 이익을 냈는지. 자산 활용 효율성' }
+            ]);
+
+            displayRatioCards('liquidity-cards', [
+                { title: '유동비율', value: analysis.liquidity.currentRatio, unit: '', good: 1.5, excellent: 2.0, description: '1년 내 현금화 가능한 자산 vs 1년 내 갚아야 할 빚. 2.0 이상이면 안전' },
+                { title: '당좌비율', value: analysis.liquidity.quickRatio, unit: '', good: 1.0, excellent: 1.5, description: '즉시 현금화 가능한 자산 vs 단기 빚. 재고 등을 제외한 진짜 현금화 능력' },
+                { title: '현금비율', value: analysis.liquidity.cashRatio, unit: '', good: 0.5, excellent: 1.0, description: '현금과 예금 vs 단기 빚. 가장 보수적인 지표로 즉시 지급 능력을 보여줌' }
+            ]);
+
+            displayRatioCards('stability-cards', [
+                { title: '부채비율', value: analysis.stability.debtToEquity, unit: '', good: 0.5, excellent: 0.3, description: '빚 vs 자기 돈의 비율. 낮을수록 안전. 1.0 이하면 빚보다 자기 돈이 많음' },
+                { title: '부채자산비율', value: analysis.stability.debtToAssets, unit: '', good: 0.4, excellent: 0.2, description: '전체 자산 중 빚의 비율. 50% 이하면 안전한 수준' },
+                { title: '이자보상배율', value: analysis.stability.interestCoverage, unit: '배', good: 5, excellent: 10, description: '영업이익으로 이자를 몇 번 갚을 수 있는지. 높을수록 이자 지급이 안전' }
+            ]);
+        }
+
+        // 종합 요약 표시
+        function displaySummary(analysis) {
+            const summaryCard = document.getElementById('summary-card');
+            const summaryContent = document.getElementById('summary-content');
+            
+            // 종합 점수 계산
+            const profitScore = calculateScore(analysis.profitability.netProfitMargin, 8, 15);
+            const liquidityScore = calculateScore(analysis.liquidity.currentRatio, 1.5, 2.0);
+            const stabilityScore = calculateScore(1 - analysis.stability.debtToAssets, 0.6, 0.8);
+            
+            const overallScore = Math.round((profitScore + liquidityScore + stabilityScore) / 3);
+            
+            summaryContent.innerHTML = `
+                <div class="text-center">
+                    <div class="text-3xl font-bold mb-2">${overallScore}/100</div>
+                    <div class="text-sm opacity-90">종합 점수</div>
+                </div>
+                <div class="text-center">
+                    <div class="text-2xl font-bold mb-2">${getGrade(overallScore)}</div>
+                    <div class="text-sm opacity-90">재무 등급</div>
+                </div>
+                <div class="text-center">
+                    <div class="text-xl font-bold mb-2">${analysis.profitability.netProfitMargin.toFixed(1)}%</div>
+                    <div class="text-sm opacity-90">순이익률</div>
+                </div>
+            `;
+            
+            summaryCard.classList.remove('hidden');
+        }
+
+        // 점수 계산 함수
+        function calculateScore(value, good, excellent) {
+            if (value >= excellent) return 100;
+            if (value >= good) return 70 + (value - good) / (excellent - good) * 30;
+            if (value >= 0) return value / good * 70;
+            return 0;
+        }
+
+        // 등급 계산 함수
+        function getGrade(score) {
+            if (score >= 90) return 'A+';
+            if (score >= 80) return 'A';
+            if (score >= 70) return 'B+';
+            if (score >= 60) return 'B';
+            if (score >= 50) return 'C+';
+            if (score >= 40) return 'C';
+            return 'D';
+        }
+
+        // 비율 카드 표시
+        function displayRatioCards(containerId, ratios) {
+            const container = document.getElementById(containerId);
+            let html = '';
+
+            ratios.forEach(ratio => {
+                const status = getRatioStatus(ratio.value, ratio.good, ratio.excellent);
+                const displayValue = typeof ratio.value === 'number' ? ratio.value.toFixed(1) : '0.0';
+                
+                html += `
+                    <div class="ratio-card bg-white p-4 rounded-lg shadow-md border-l-4 ${status.borderColor}">
+                        <div class="flex items-center justify-between mb-2">
+                            <h4 class="font-medium text-gray-700 text-sm">${ratio.title}</h4>
+                            <i class="fas ${status.icon} ${status.color}"></i>
+                        </div>
+                        <div class="flex items-end gap-1 mb-2">
+                            <span class="text-2xl font-bold ${status.color}">${displayValue}</span>
+                            <span class="text-sm text-gray-500">${ratio.unit}</span>
+                        </div>
+                        <p class="text-xs text-gray-500 leading-tight">${ratio.description}</p>
+                        <div class="mt-2">
+                            <div class="w-full bg-gray-200 rounded-full h-2">
+                                <div class="${status.bgColor} h-2 rounded-full transition-all duration-500" 
+                                     style="width: ${Math.min(100, (ratio.value / ratio.excellent) * 100)}%"></div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            });
+
+            container.innerHTML = html;
+        }
+
+        // 비율 상태 계산
+        function getRatioStatus(value, good, excellent) {
+            if (value >= excellent) {
+                return {
+                    status: 'excellent',
+                    color: 'text-green-600',
+                    icon: 'fa-arrow-up',
+                    borderColor: 'border-l-green-500',
+                    bgColor: 'bg-green-500'
+                };
+            } else if (value >= good) {
+                return {
+                    status: 'good',
+                    color: 'text-blue-600',
+                    icon: 'fa-arrow-up',
+                    borderColor: 'border-l-blue-500',
+                    bgColor: 'bg-blue-500'
+                };
+            } else {
+                return {
+                    status: 'warning',
+                    color: 'text-red-600',
+                    icon: 'fa-arrow-down',
+                    borderColor: 'border-l-red-500',
+                    bgColor: 'bg-red-500'
+                };
+            }
+        }
+
+        // 차트 생성
+        function createCharts(analysis) {
+            // 기존 차트 제거
+            Object.values(charts).forEach(chart => {
+                if (chart) chart.destroy();
+            });
+
+            // 추세 차트
+            const trendCtx = document.getElementById('trendChart').getContext('2d');
+            charts.trend = new Chart(trendCtx, {
+                type: 'line',
+                data: {
+                    labels: analysis.trends.map(t => t.year),
+                    datasets: [{
+                        label: '매출액',
+                        data: analysis.trends.map(t => t.revenue),
+                        borderColor: 'rgb(59, 130, 246)',
+                        backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                        tension: 0.4,
+                        fill: true
+                    }, {
+                        label: '순이익',
+                        data: analysis.trends.map(t => t.profit),
+                        borderColor: 'rgb(16, 185, 129)',
+                        backgroundColor: 'rgba(16, 185, 129, 0.1)',
+                        tension: 0.4,
+                        fill: true
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        title: {
+                            display: true,
+                            text: '매출액 및 순이익 추세'
+                        },
+                        legend: {
+                            position: 'top'
+                        }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            ticks: {
+                                callback: function(value) {
+                                    return value.toLocaleString();
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+
+            // 수익성 차트
+            const profitCtx = document.getElementById('profitChart').getContext('2d');
+            charts.profit = new Chart(profitCtx, {
+                type: 'bar',
+                data: {
+                    labels: ['매출총이익률', '영업이익률', '순이익률'],
+                    datasets: [{
+                        label: '수익성 (%)',
+                        data: [
+                            analysis.profitability.grossProfitMargin,
+                            analysis.profitability.operatingMargin,
+                            analysis.profitability.netProfitMargin
+                        ],
+                        backgroundColor: [
+                            'rgba(59, 130, 246, 0.8)',
+                            'rgba(16, 185, 129, 0.8)',
+                            'rgba(139, 92, 246, 0.8)'
+                        ],
+                        borderColor: [
+                            'rgb(59, 130, 246)',
+                            'rgb(16, 185, 129)',
+                            'rgb(139, 92, 246)'
+                        ],
+                        borderWidth: 2
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            display: false
+                        }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            ticks: {
+                                callback: function(value) {
+                                    return value + '%';
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+
+            // 안정성 차트
+            const stabilityCtx = document.getElementById('stabilityChart').getContext('2d');
+            charts.stability = new Chart(stabilityCtx, {
+                type: 'doughnut',
+                data: {
+                    labels: ['유동비율', '당좌비율', '현금비율'],
+                    datasets: [{
+                        data: [
+                            analysis.liquidity.currentRatio,
+                            analysis.liquidity.quickRatio,
+                            analysis.liquidity.cashRatio
+                        ],
+                        backgroundColor: [
+                            'rgba(59, 130, 246, 0.8)',
+                            'rgba(16, 185, 129, 0.8)',
+                            'rgba(245, 158, 11, 0.8)'
+                        ],
+                        borderColor: [
+                            'rgb(59, 130, 246)',
+                            'rgb(16, 185, 129)',
+                            'rgb(245, 158, 11)'
+                        ],
+                        borderWidth: 2
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            position: 'bottom'
+                        }
+                    }
+                }
+            });
+        }
+
+        // 데이터 내보내기
+        function exportData() {
+            if (!uploadedData || !analysisData) {
+                alert('내보낼 데이터가 없습니다.');
+                return;
+            }
+
+            // 분석 결과를 포함한 워크북 생성
+            const wb = XLSX.utils.book_new();
+            
+            // 원본 데이터 시트
+            const ws1 = XLSX.utils.json_to_sheet(uploadedData);
+            XLSX.utils.book_append_sheet(wb, ws1, '원본 데이터');
+            
+            // 분석 결과 시트
+            const analysisSheet = [
+                { 구분: '수익성 분석', 지표: '', 값: '', 단위: '' },
+                { 구분: '', 지표: '매출총이익률', 값: analysisData.profitability.grossProfitMargin.toFixed(2), 단위: '%' },
+                { 구분: '', 지표: '영업이익률', 값: analysisData.profitability.operatingMargin.toFixed(2), 단위: '%' },
+                { 구분: '', 지표: '순이익률', 값: analysisData.profitability.netProfitMargin.toFixed(2), 단위: '%' },
+                { 구분: '', 지표: 'ROE', 값: analysisData.profitability.roe.toFixed(2), 단위: '%' },
+                { 구분: '', 지표: 'ROA', 값: analysisData.profitability.roa.toFixed(2), 단위: '%' },
+                { 구분: '유동성 분석', 지표: '', 값: '', 단위: '' },
+                { 구분: '', 지표: '유동비율', 값: analysisData.liquidity.currentRatio.toFixed(2), 단위: '' },
+                { 구분: '', 지표: '당좌비율', 값: analysisData.liquidity.quickRatio.toFixed(2), 단위: '' },
+                { 구분: '', 지표: '현금비율', 값: analysisData.liquidity.cashRatio.toFixed(2), 단위: '' },
+                { 구분: '안정성 분석', 지표: '', 값: '', 단위: '' },
+                { 구분: '', 지표: '부채비율', 값: analysisData.stability.debtToEquity.toFixed(2), 단위: '' },
+                { 구분: '', 지표: '부채자산비율', 값: analysisData.stability.debtToAssets.toFixed(2), 단위: '' },
+                { 구분: '', 지표: '이자보상배율', 값: analysisData.stability.interestCoverage.toFixed(2), 단위: '배' }
+            ];
+            
+            const ws2 = XLSX.utils.json_to_sheet(analysisSheet);
+            XLSX.utils.book_append_sheet(wb, ws2, '분석 결과');
+            
+            // 파일 다운로드
+            const fileName = `재무분석_결과_${new Date().toISOString().slice(0, 10)}.xlsx`;
+            XLSX.writeFile(wb, fileName);
+            
+            alert('📊 분석 결과가 Excel 파일로 다운로드되었습니다!');
+        }
+
+        // 페이지 로드 시 초기화
+        document.addEventListener('DOMContentLoaded', function() {
+            // 서비스 워커 등록 (PWA)
+            if ('serviceWorker' in navigator) {
+                navigator.serviceWorker.register('/sw.js').catch(console.error);
+            }
+            
+            // 초기 탭 설정
+            showTab('upload');
+            
+            // 키보드 단축키
+            document.addEventListener('keydown', function(e) {
+                if (e.ctrlKey || e.metaKey) {
+                    switch(e.key) {
+                        case 'u':
+                            e.preventDefault();
+                            document.getElementById('file-upload').click();
+                            break;
+                        case 's':
+                            e.preventDefault();
+                            if (analysisData) exportData();
+                            break;
+                    }
+                }
+            });
+            
+            console.log('📊 재무제표 분석기가 준비되었습니다!');
+        });
+
+        // 에러 핸들링
+        window.addEventListener('error', function(e) {
+            console.error('애플리케이션 오류:', e.error);
+            alert('오류가 발생했습니다. 페이지를 새로고침해 주세요.');
+        });
+
+        // 반응형 처리
+        window.addEventListener('resize', function() {
+            Object.values(charts).forEach(chart => {
+                if (chart) chart.resize();
+            });
+        });
+    </script>
+</body>
+</html>
