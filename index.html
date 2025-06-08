@@ -292,15 +292,23 @@
                 
                 // Alpha Vantage API 호출 (로컬 프록시 서버 사용)
                 const proxyBase = 'http://localhost:3000/av';
-                const url = `${proxyBase}?function=${functionName}&symbol=${symbol}&apikey=${apiKey}`;
-                const response = await fetch(url);
-                if (!response.ok) throw new Error('프록시 서버 오류');
-                const data = await response.json();
-                if (data['Note']) throw new Error('API 호출 한도 초과');
-                if (data['Error Message']) throw new Error(data['Error Message']);
-                if (data['Information']) throw new Error('API 키가 유효하지 않거나 사용량 초과');
+                async function callAlphaVantageAPI(functionName, symbol) {
+                    const url = `${proxyBase}?function=${functionName}&symbol=${symbol}&apikey=${apiKey}`;
+                    try {
+                        const response = await fetch(url);
+                        if (!response.ok) throw new Error('프록시 서버 오류');
+                        const data = await response.json();
+                        if (data['Note']) throw new Error('API 호출 한도 초과');
+                        if (data['Error Message']) throw new Error(data['Error Message']);
+                        if (data['Information']) throw new Error('API 키가 유효하지 않거나 사용량 초과');
+                        return data;
+                    } catch (err) {
+                        throw err;
+                    }
+                }
                 
                 // 데이터 표시
+                const data = await callAlphaVantageAPI('OVERVIEW', symbol);
                 displayFinancialData(symbol, data);
                 createChart(data);
                 
