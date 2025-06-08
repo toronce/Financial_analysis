@@ -290,23 +290,22 @@
                 console.log(`🔍 ${symbol} 분석 시작...`);
                 console.log('사용 중인 API 키:', apiKey.substring(0, 3) + '...' + apiKey.substring(apiKey.length - 3));
                 
-                // Alpha Vantage API 호출
-                const [overview, income, balance] = await Promise.all([
-                    callAlphaVantageAPI('OVERVIEW', symbol),
-                    callAlphaVantageAPI('INCOME_STATEMENT', symbol),
-                    callAlphaVantageAPI('BALANCE_SHEET', symbol)
-                ]);
-
-                if (!overview || !overview.Symbol) {
-                    throw new Error(`${symbol} 기업을 찾을 수 없습니다. 유효한 티커 심볼인지 확인해주세요.`);
-                }
-
+                // Alpha Vantage API 호출 (로컬 프록시 서버 사용)
+                const proxyBase = 'http://localhost:3000/av';
+                const url = `${proxyBase}?function=${functionName}&symbol=${symbol}&apikey=${apiKey}`;
+                const response = await fetch(url);
+                if (!response.ok) throw new Error('프록시 서버 오류');
+                const data = await response.json();
+                if (data['Note']) throw new Error('API 호출 한도 초과');
+                if (data['Error Message']) throw new Error(data['Error Message']);
+                if (data['Information']) throw new Error('API 키가 유효하지 않거나 사용량 초과');
+                
                 // 데이터 표시
-                displayFinancialData(symbol, overview, income, balance);
-                createChart(overview, income, balance);
+                displayFinancialData(symbol, data);
+                createChart(data);
                 
                 showResult();
-                showSuccess(`✅ ${overview.Name || symbol} 분석 완료!`);
+                showSuccess(`✅ ${data.Name || symbol} 분석 완료!`);
                 updateApiUsage();
 
             } catch (error) {
@@ -317,163 +316,21 @@
             }
         }
 
-        // Alpha Vantage API 호출 (CORS 프록시 사용)
-        async function callAlphaVantageAPI(functionName, symbol) {
-            // CORS 프록시 옵션 목록 (여러 옵션을 제공하여 하나가 실패하면 다른 것을 시도)
-            const proxyOptions = [
-                'https://corsproxy.io/?',
-                'https://cors-anywhere.herokuapp.com/',
-                'https://api.allorigins.win/raw?url=',
-                'https://api.codetabs.com/v1/proxy?quest=',
-                'DIRECT' // 직접 요청 시도 (no-cors 모드)
-            ];
-            
-            // 기본 URL
-            const targetUrl = `https://www.alphavantage.co/query?function=${functionName}&symbol=${symbol}&apikey=${apiKey}`;
-            
-            // 모든 프록시를 시도
-            let lastError = null;
-            for (const proxyUrl of proxyOptions) {
-                try {
-                    console.log(`📡 API 호출 시도: ${functionName} for ${symbol} (프록시: ${proxyUrl})`);
-                    
-                    let url, fetchOptions;
-                    
-                    if (proxyUrl === 'DIRECT') {
-                        // 직접 요청 (no-cors 모드와 표준 모드 모두 시도)
-                        url = targetUrl;
-                        
-                        // 먼저 일반 모드로 시도
-                        try {
-                            console.log('직접 요청 시도 (표준 모드)');
-                            const directResponse = await fetch(url, {
-                                method: 'GET',
-                                headers: {
-                                    'Content-Type': 'application/json'
-                                }
-                            });
-                            
-                            if (directResponse.ok) {
-                                const data = await directResponse.json();
-                                if (!data['Error Message'] && !data['Information'] && !data['Note']) {
-                                    console.log('✅ 직접 요청 성공 (표준 모드)');
-                                    return data;
-                                }
-                            }
-                        } catch (directError) {
-                            console.warn('직접 요청 실패 (표준 모드):', directError);
-                        }
-                        
-                        // no-cors 모드로 시도 (브라우저는 응답을 읽지 못하지만 요청은 수행됨)
-                        console.log('직접 요청 시도 (no-cors 모드)');
-                        fetchOptions = {
-                            method: 'GET',
-                            mode: 'no-cors',
-                            cache: 'no-cache',
-                            headers: {
-                                'Content-Type': 'application/json'
-                            }
-                        };
-                    } else {
-                        // 프록시 요청
-                        url = proxyUrl.includes('?url=') || proxyUrl.includes('?quest=')
-                            ? proxyUrl + encodeURIComponent(targetUrl)
-                            : proxyUrl + targetUrl;
-                        
-                        fetchOptions = {
-                            method: 'GET',
-                            headers: {
-                                'Content-Type': 'application/json',
-                                'Origin': window.location.origin
-                            }
-                        };
-                    }
-                    
-                    const response = await fetch(url, fetchOptions);
-                    
-                    // no-cors 모드에서는 응답 타입이 'opaque'이며 내용을 읽을 수 없음
-                    if (response.type === 'opaque') {
-                        console.log('⚠️ no-cors 모드 응답 (불투명): 내용을 확인할 수 없어 다음 프록시로 넘어감');
-                        continue;
-                    }
-                    
-                    if (!response.ok) {
-                        console.warn(`프록시 ${proxyUrl} 실패: HTTP ${response.status}`);
-                        lastError = new Error(`HTTP 오류: ${response.status}`);
-                        continue; // 다음 프록시 시도
-                    }
-                    
-                    const data = await response.json();
-                    
-                    // API 에러 체크
-                    if (data['Note']) {
-                        lastError = new Error('API 호출 한도를 초과했습니다. 잠시 후 다시 시도해주세요.');
-                        console.warn('API 한도 초과, 다음 프록시 시도');
-                        continue; // 다음 프록시 시도
-                    }
-                    
-                    if (data['Error Message']) {
-                        lastError = new Error(data['Error Message']);
-                        console.warn(`API 에러: ${data['Error Message']}`);
-                        continue; // 다음 프록시 시도
-                    }
-
-                    if (data['Information']) {
-                        lastError = new Error('API 키가 유효하지 않거나 사용량을 초과했습니다.');
-                        console.warn('API 키 에러, 다음 프록시 시도');
-                        continue; // 다음 프록시 시도
-                    }
-                    
-                    // 데이터가 실제로 있는지 확인
-                    if (functionName === 'OVERVIEW' && !data.Symbol) {
-                        lastError = new Error(`${symbol}에 대한 개요 데이터가 없습니다.`);
-                        console.warn('개요 데이터 없음, 다음 프록시 시도');
-                        continue; // 다음 프록시 시도
-                    }
-                    
-                    if (functionName === 'INCOME_STATEMENT' && (!data.annualReports || data.annualReports.length === 0)) {
-                        lastError = new Error(`${symbol}에 대한 손익계산서 데이터가 없습니다.`);
-                        console.warn('손익계산서 데이터 없음, 다음 프록시 시도');
-                        continue; // 다음 프록시 시도
-                    }
-                    
-                    if (functionName === 'BALANCE_SHEET' && (!data.annualReports || data.annualReports.length === 0)) {
-                        lastError = new Error(`${symbol}에 대한 재무상태표 데이터가 없습니다.`);
-                        console.warn('재무상태표 데이터 없음, 다음 프록시 시도');
-                        continue; // 다음 프록시 시도
-                    }
-                    
-                    // 성공!
-                    console.log(`✅ ${functionName} 데이터 수신 완료 (프록시: ${proxyUrl})`);
-                    return data;
-                    
-                } catch (error) {
-                    console.error(`❌ 프록시 ${proxyUrl} 사용 중 오류 발생:`, error);
-                    lastError = error;
-                    // 다음 프록시 시도
-                }
-            }
-            
-            // 모든 프록시가 실패한 경우
-            console.error(`❌ 모든 프록시가 실패했습니다. (${functionName})`);
-            throw lastError || new Error('알 수 없는 오류로 API 호출에 실패했습니다.');
-        }
-
         // 재무 데이터 표시
-        function displayFinancialData(symbol, overview, income, balance) {
+        function displayFinancialData(symbol, data) {
             try {
                 // 기업 정보
-                document.getElementById('companyName').textContent = overview.Name || symbol;
-                document.getElementById('companyInfo').textContent = `${symbol} | ${overview.Sector || 'N/A'} | ${overview.Country || 'N/A'}`;
+                document.getElementById('companyName').textContent = data.Name || symbol;
+                document.getElementById('companyInfo').textContent = `${symbol} | ${data.Sector || 'N/A'} | ${data.Country || 'N/A'}`;
                 
                 // 주요 지표
-                document.getElementById('marketCap').textContent = formatNumber(overview.MarketCapitalization) || 'N/A';
-                document.getElementById('peRatio').textContent = overview.PERatio && overview.PERatio !== 'None' ? parseFloat(overview.PERatio).toFixed(1) + '배' : 'N/A';
-                document.getElementById('dividendYield').textContent = overview.DividendYield && overview.DividendYield !== 'None' ? (parseFloat(overview.DividendYield) * 100).toFixed(2) + '%' : 'N/A';
-                document.getElementById('bookValue').textContent = overview.BookValue && overview.BookValue !== 'None' ? '$' + parseFloat(overview.BookValue).toFixed(2) : 'N/A';
+                document.getElementById('marketCap').textContent = formatNumber(data.MarketCapitalization) || 'N/A';
+                document.getElementById('peRatio').textContent = data.PERatio && data.PERatio !== 'None' ? parseFloat(data.PERatio).toFixed(1) + '배' : 'N/A';
+                document.getElementById('dividendYield').textContent = data.DividendYield && data.DividendYield !== 'None' ? (parseFloat(data.DividendYield) * 100).toFixed(2) + '%' : 'N/A';
+                document.getElementById('bookValue').textContent = data.BookValue && data.BookValue !== 'None' ? '$' + parseFloat(data.BookValue).toFixed(2) : 'N/A';
 
                 // 손익계산서
-                const latestIncome = income?.annualReports?.[0];
+                const latestIncome = data?.annualReports?.[0];
                 const incomeItems = [
                     { name: '매출액', value: latestIncome?.totalRevenue, suffix: '' },
                     { name: '영업이익', value: latestIncome?.operatingIncome, suffix: '' },
@@ -484,7 +341,7 @@
                 displayItems('incomeStatement', incomeItems);
 
                 // 재무상태표
-                const latestBalance = balance?.annualReports?.[0];
+                const latestBalance = data?.annualReports?.[0];
                 const balanceItems = [
                     { name: '총자산', value: latestBalance?.totalAssets, suffix: '' },
                     { name: '총부채', value: latestBalance?.totalLiabilities, suffix: '' },
@@ -530,7 +387,7 @@
         }
 
         // 차트 생성
-        function createChart(overview, income, balance) {
+        function createChart(data) {
             const ctx = document.getElementById('financialChart');
             if (!ctx) return;
             
@@ -544,8 +401,8 @@
                 const revenues = [];
                 const profits = [];
 
-                if (income?.annualReports && income.annualReports.length > 0) {
-                    income.annualReports.slice(0, 4).reverse().forEach(report => {
+                if (data?.annualReports && data.annualReports.length > 0) {
+                    data.annualReports.slice(0, 4).reverse().forEach(report => {
                         const year = report.fiscalDateEnding?.substring(0, 4) || '';
                         const revenue = parseFloat(report.totalRevenue || 0) / 1000000000;
                         const profit = parseFloat(report.netIncome || 0) / 1000000000;
