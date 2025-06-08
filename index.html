@@ -437,7 +437,7 @@
             return base * (0.9 + Math.random() * 0.2); // ±10% 변동
         }
 
-        // 회사 데이터 표시
+        // 회사 데이터 표시 (안전한 포맷팅)
         function displayCompanyData(symbol, quoteData, financialData, keyStats) {
             const quote = quoteData?.price || {};
             const financial = financialData?.financialData || {};
@@ -449,35 +449,43 @@
             document.getElementById('companyExchange').textContent = quote.exchangeName || '거래소';
             document.getElementById('lastUpdated').textContent = new Date().toLocaleString('ko-KR');
 
-            // 주가 정보
+            // 주가 정보 (안전한 포맷팅)
             const price = quote.regularMarketPrice?.raw || 0;
             const change = quote.regularMarketChangePercent?.raw || 0;
             const currency = quote.currency || 'USD';
             
-            const priceText = currency === 'KRW' ? 
-                `${Math.round(price).toLocaleString()}원` : 
-                `$${price.toFixed(2)}`;
+            let priceText = 'N/A';
+            try {
+                if (currency === 'KRW') {
+                    priceText = `${Math.round(price).toLocaleString()}원`;
+                } else {
+                    priceText = `${safeFormatNumber(price, 2)}`;
+                }
+            } catch (error) {
+                priceText = `${price} ${currency}`;
+            }
             
             document.getElementById('stockPrice').textContent = priceText;
             
             const changeColor = change >= 0 ? 'text-green-300' : 'text-red-300';
             const changeSymbol = change >= 0 ? '+' : '';
+            const changePercent = safeFormatNumber(change * 100, 2);
             document.getElementById('stockChange').innerHTML = 
-                `<span class="${changeColor}">${changeSymbol}${(change * 100).toFixed(2)}%</span>`;
+                `<span class="${changeColor}">${changeSymbol}${changePercent}%</span>`;
 
             const marketCap = quote.marketCap?.raw || 0;
             document.getElementById('marketCap').textContent = 
                 `시가총액: ${formatLargeNumber(marketCap)} ${currency}`;
 
-            // 요약 지표
+            // 요약 지표 (안전한 포맷팅)
             document.getElementById('profitMarginValue').textContent = 
-                financial.profitMargins ? `${(financial.profitMargins.raw * 100).toFixed(1)}%` : 'N/A';
+                financial.profitMargins ? safeFormatPercent(financial.profitMargins.raw * 100) : 'N/A';
             document.getElementById('roeValue').textContent = 
-                financial.returnOnEquity ? `${(financial.returnOnEquity.raw * 100).toFixed(1)}%` : 'N/A';
+                financial.returnOnEquity ? safeFormatPercent(financial.returnOnEquity.raw * 100) : 'N/A';
             document.getElementById('peValue').textContent = 
-                stats.forwardPE ? `${stats.forwardPE.raw.toFixed(1)}배` : 'N/A';
+                stats.forwardPE ? `${safeFormatNumber(stats.forwardPE.raw)}배` : 'N/A';
             document.getElementById('currentRatioValue').textContent = 
-                financial.currentRatio ? financial.currentRatio.raw.toFixed(1) : 'N/A';
+                financial.currentRatio ? safeFormatNumber(financial.currentRatio.raw) : 'N/A';
 
             // 상세 지표
             displayDetailedMetrics(financial, stats);
@@ -511,15 +519,24 @@
             displayMetricCards('stabilitySection', stabilityMetrics);
         }
 
-        // 지표 카드 표시
+        // 지표 카드 표시 (안전한 포맷팅)
         function displayMetricCards(containerId, metrics) {
             const container = document.getElementById(containerId);
             let html = '';
 
             metrics.forEach(metric => {
                 const value = metric.value;
-                const displayValue = value !== undefined && value !== null ? 
-                    (metric.multiplier * value).toFixed(1) + metric.unit : 'N/A';
+                let displayValue = 'N/A';
+                
+                if (value !== undefined && value !== null && !isNaN(value)) {
+                    try {
+                        const calculatedValue = metric.multiplier * value;
+                        displayValue = safeFormatNumber(calculatedValue) + metric.unit;
+                    } catch (error) {
+                        console.log('지표 포맷팅 오류:', error);
+                        displayValue = 'N/A';
+                    }
+                }
                 
                 const statusColor = getMetricColor(metric.name, value);
 
@@ -681,13 +698,69 @@
             }
         }
 
-        // 큰 수 포맷팅
+        // 큰 수 포맷팅 (오류 수정)
         function formatLargeNumber(num) {
-            if (num >= 1e12) return (num / 1e12).toFixed(1) + 'T';
-            if (num >= 1e9) return (num / 1e9).toFixed(1) + 'B';
-            if (num >= 1e6) return (num / 1e6).toFixed(1) + 'M';
-            if (num >= 1e3) return (num / 1e3).toFixed(1) + 'K';
-            return num.toFixed(0);
+            if (!num || typeof num !== 'number' || isNaN(num)) {
+                return '0';
+            }
+            
+            const absNum = Math.abs(num);
+            
+            try {
+                if (absNum >= 1e12) {
+                    return (num / 1e12).toFixed(1) + 'T';
+                }
+                if (absNum >= 1e9) {
+                    return (num / 1e9).toFixed(1) + 'B';
+                }
+                if (absNum >= 1e6) {
+                    return (num / 1e6).toFixed(1) + 'M';
+                }
+                if (absNum >= 1e3) {
+                    return (num / 1e3).toFixed(1) + 'K';
+                }
+                
+                // 소수점 처리 (안전하게)
+                if (absNum < 1) {
+                    return num.toFixed(2);
+                } else if (absNum < 10) {
+                    return num.toFixed(1);
+                } else {
+                    return Math.round(num).toString();
+                }
+                
+            } catch (error) {
+                console.log('숫자 포맷팅 오류:', error);
+                return num.toString();
+            }
+        }
+
+        // 안전한 숫자 포맷팅
+        function safeFormatNumber(value, decimals = 1) {
+            if (value === null || value === undefined || isNaN(value)) {
+                return 'N/A';
+            }
+            
+            try {
+                const num = Number(value);
+                if (!isFinite(num)) {
+                    return 'N/A';
+                }
+                
+                // decimals 값 검증
+                const safeDecimals = Math.max(0, Math.min(20, Math.floor(decimals)));
+                
+                return num.toFixed(safeDecimals);
+            } catch (error) {
+                console.log('숫자 포맷팅 오류:', error);
+                return value.toString();
+            }
+        }
+
+        // 안전한 퍼센트 포맷팅
+        function safeFormatPercent(value, decimals = 1) {
+            const formatted = safeFormatNumber(value, decimals);
+            return formatted === 'N/A' ? 'N/A' : formatted + '%';
         }
 
         // 로딩 표시
