@@ -150,7 +150,7 @@
                 <!-- API 사용량 -->
                 <div class="mt-6 text-center">
                     <span class="text-sm text-gray-600">
-                        API 사용량: <span id="apiUsage" class="font-semibold text-blue-600">0</span>/25 (오늘)
+                        API 사용량: <span id="apiUsage" class="font-semibold text-blue-600">0</span>/25 (세션)
                     </span>
                 </div>
             </div>
@@ -229,13 +229,13 @@
     </div>
 
     <script>
-        // 전역 변수
+        // 전역 변수 (메모리만 사용)
         let currentChart = null;
         let apiKey = null;
         let apiUsageCount = 0;
         let loadingProgress = null;
 
-        // API 키 저장
+        // API 키 저장 (메모리만)
         function saveApiKey() {
             const keyInput = document.getElementById('apiKeyInput');
             const key = keyInput.value.trim();
@@ -245,9 +245,7 @@
                 return;
             }
             
-            // API 키 저장 및 활성화
             apiKey = key;
-            localStorage.setItem('alphaVantageApiKey', key);
             
             document.getElementById('apiSetup').style.display = 'none';
             document.getElementById('analysisTools').classList.remove('hidden');
@@ -258,7 +256,6 @@
             `;
             
             showSuccess('✅ API 키 설정 완료! 이제 기업을 검색해보세요.');
-            updateApiUsage();
         }
 
         // 엔터키 처리
@@ -319,11 +316,14 @@
             }
         }
 
-        // Alpha Vantage API 호출
+        // Alpha Vantage API 호출 (CORS 프록시 사용)
         async function callAlphaVantageAPI(functionName, symbol) {
-            const url = `https://www.alphavantage.co/query?function=${functionName}&symbol=${symbol}&apikey=${apiKey}`;
+            const proxyUrl = 'https://api.allorigins.win/raw?url=';
+            const targetUrl = `https://www.alphavantage.co/query?function=${functionName}&symbol=${symbol}&apikey=${apiKey}`;
+            const url = proxyUrl + encodeURIComponent(targetUrl);
             
             try {
+                console.log(`📡 API 호출: ${functionName} for ${symbol}`);
                 const response = await fetch(url);
                 
                 if (!response.ok) {
@@ -344,12 +344,11 @@
                     throw new Error('API 키가 유효하지 않거나 사용량을 초과했습니다.');
                 }
                 
+                console.log(`✅ ${functionName} 데이터 수신 완료`);
                 return data;
                 
             } catch (error) {
-                if (error.message.includes('fetch')) {
-                    throw new Error('네트워크 연결을 확인해주세요.');
-                }
+                console.error(`❌ API 호출 실패 (${functionName}):`, error);
                 throw error;
             }
         }
@@ -453,7 +452,6 @@
                     });
                 }
 
-                // 데이터가 없는 경우
                 if (years.length === 0) {
                     ctx.getContext('2d').clearRect(0, 0, ctx.width, ctx.height);
                     const context = ctx.getContext('2d');
@@ -591,37 +589,20 @@
             }
         }
 
-        // API 사용량 업데이트
+        // API 사용량 업데이트 (메모리만)
         function updateApiUsage() {
-            try {
-                const today = new Date().toDateString();
-                const savedDate = localStorage.getItem('alphaVantageUsageDate');
+            apiUsageCount++;
+            const usageElement = document.getElementById('apiUsage');
+            if (usageElement) {
+                usageElement.textContent = apiUsageCount;
                 
-                if (savedDate !== today) {
-                    apiUsageCount = 0;
-                    localStorage.setItem('alphaVantageUsageDate', today);
+                if (apiUsageCount > 20) {
+                    usageElement.className = 'font-semibold text-red-600';
+                } else if (apiUsageCount > 15) {
+                    usageElement.className = 'font-semibold text-yellow-600';
                 } else {
-                    apiUsageCount = parseInt(localStorage.getItem('alphaVantageUsageCount') || '0');
+                    usageElement.className = 'font-semibold text-blue-600';
                 }
-                
-                apiUsageCount++;
-                localStorage.setItem('alphaVantageUsageCount', apiUsageCount.toString());
-                
-                const usageElement = document.getElementById('apiUsage');
-                if (usageElement) {
-                    usageElement.textContent = apiUsageCount;
-                    
-                    // 사용량이 많아지면 경고 색상
-                    if (apiUsageCount > 20) {
-                        usageElement.className = 'font-semibold text-red-600';
-                    } else if (apiUsageCount > 15) {
-                        usageElement.className = 'font-semibold text-yellow-600';
-                    } else {
-                        usageElement.className = 'font-semibold text-blue-600';
-                    }
-                }
-            } catch (error) {
-                console.error('API 사용량 업데이트 오류:', error);
             }
         }
 
@@ -664,99 +645,34 @@
 
         // 성공 메시지
         function showSuccess(message) {
-            try {
-                const successDiv = document.createElement('div');
-                successDiv.className = 'fixed top-4 right-4 bg-green-500 text-white px-6 py-3 rounded-lg shadow-lg z-50';
-                successDiv.innerHTML = `<i class="fas fa-check-circle mr-2"></i>${message}`;
-                
-                document.body.appendChild(successDiv);
-                
-                setTimeout(() => {
-                    if (document.body.contains(successDiv)) {
-                        document.body.removeChild(successDiv);
-                    }
-                }, 4000);
-            } catch (error) {
-                console.error('성공 메시지 표시 오류:', error);
-            }
+            const successDiv = document.createElement('div');
+            successDiv.className = 'fixed top-4 right-4 bg-green-500 text-white px-6 py-3 rounded-lg shadow-lg z-50';
+            successDiv.innerHTML = `<i class="fas fa-check-circle mr-2"></i>${message}`;
+            
+            document.body.appendChild(successDiv);
+            
+            setTimeout(() => {
+                if (document.body.contains(successDiv)) {
+                    document.body.removeChild(successDiv);
+                }
+            }, 4000);
         }
 
-        // 초기화
+        // 초기화 (localStorage 완전 제거)
         document.addEventListener('DOMContentLoaded', function() {
             console.log('🚀 Alpha Vantage 분석기 준비 완료!');
-            
-            try {
-                // 저장된 API 키 확인
-                const savedApiKey = localStorage.getItem('alphaVantageApiKey');
-                if (savedApiKey && savedApiKey !== 'null' && savedApiKey !== '') {
-                    apiKey = savedApiKey;
-                    document.getElementById('apiKeyInput').value = savedApiKey;
-                    document.getElementById('apiSetup').style.display = 'none';
-                    document.getElementById('analysisTools').classList.remove('hidden');
-                    document.getElementById('apiStatus').innerHTML = `
-                        <span class="bg-green-100 text-green-800 px-3 py-1 rounded-full">
-                            <i class="fas fa-check-circle mr-1"></i>API 키 로드됨
-                        </span>
-                    `;
-                }
-                
-                // API 사용량 초기화
-                updateApiUsageDisplay();
-                
-            } catch (error) {
-                console.error('초기화 오류:', error);
-            }
         });
-
-        function updateApiUsageDisplay() {
-            try {
-                const today = new Date().toDateString();
-                const savedDate = localStorage.getItem('alphaVantageUsageDate');
-                
-                if (savedDate !== today) {
-                    apiUsageCount = 0;
-                    localStorage.setItem('alphaVantageUsageDate', today);
-                    localStorage.setItem('alphaVantageUsageCount', '0');
-                } else {
-                    apiUsageCount = parseInt(localStorage.getItem('alphaVantageUsageCount') || '0');
-                }
-                
-                const usageElement = document.getElementById('apiUsage');
-                if (usageElement) {
-                    usageElement.textContent = apiUsageCount;
-                }
-            } catch (error) {
-                console.error('사용량 표시 오류:', error);
-            }
-        }
 
         // 정리
         window.addEventListener('beforeunload', function() {
-            try {
-                if (currentChart) {
-                    currentChart.destroy();
-                    currentChart = null;
-                }
-                if (loadingProgress) {
-                    clearInterval(loadingProgress);
-                    loadingProgress = null;
-                }
-            } catch (error) {
-                console.error('정리 오류:', error);
+            if (currentChart) {
+                currentChart.destroy();
+                currentChart = null;
             }
-        });
-
-        // 전역 오류 처리
-        window.addEventListener('error', function(event) {
-            console.error('전역 오류:', event.error);
-            showError('예상치 못한 오류가 발생했습니다. 페이지를 새로고침해주세요.');
-        });
-
-        // Promise 오류 처리
-        window.addEventListener('unhandledrejection', function(event) {
-            console.error('처리되지 않은 Promise 오류:', event.reason);
-            showError('네트워크 또는 API 오류가 발생했습니다.');
-            event.preventDefault();
+            if (loadingProgress) {
+                clearInterval(loadingProgress);
+                loadingProgress = null;
+            }
         });
     </script>
 </body>
