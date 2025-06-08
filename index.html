@@ -293,16 +293,50 @@
                 // Alpha Vantage API 호출 (로컬 프록시 서버 사용)
                 const proxyBase = 'http://localhost:3000/av';
                 async function callAlphaVantageAPI(functionName, symbol) {
+                    if (!apiKey || apiKey === 'YOUR_API_KEY') {
+                        throw new Error('유효한 API 키를 입력해주세요.');
+                    }
+
                     const url = `${proxyBase}?function=${functionName}&symbol=${symbol}&apikey=${apiKey}`;
+                    console.log(`📡 API 요청 URL: ${url.replace(apiKey, '***')}`);
+                    
                     try {
                         const response = await fetch(url);
-                        if (!response.ok) throw new Error('프록시 서버 오류');
+                        console.log(`📥 API 응답 상태: ${response.status}`);
+                        
+                        if (!response.ok) {
+                            throw new Error(`프록시 서버 오류 (${response.status})`);
+                        }
+                        
                         const data = await response.json();
-                        if (data['Note']) throw new Error('API 호출 한도 초과');
-                        if (data['Error Message']) throw new Error(data['Error Message']);
-                        if (data['Information']) throw new Error('API 키가 유효하지 않거나 사용량 초과');
+                        console.log('📦 API 응답 데이터:', JSON.stringify(data).substring(0, 200) + '...');
+                        
+                        // API 에러 체크
+                        if (data['Note']) {
+                            if (data['Note'].includes('API call frequency')) {
+                                throw new Error('API 호출 빈도 제한에 도달했습니다. 잠시 후 다시 시도해주세요.');
+                            } else if (data['Note'].includes('API key')) {
+                                throw new Error('API 키가 유효하지 않습니다. 새로운 키를 발급받아주세요.');
+                            }
+                            throw new Error(data['Note']);
+                        }
+                        
+                        if (data['Error Message']) {
+                            throw new Error(data['Error Message']);
+                        }
+                        
+                        if (data['Information']) {
+                            if (data['Information'].includes('API call frequency')) {
+                                throw new Error('API 호출 빈도 제한에 도달했습니다. 잠시 후 다시 시도해주세요.');
+                            } else if (data['Information'].includes('API key')) {
+                                throw new Error('API 키가 유효하지 않습니다. 새로운 키를 발급받아주세요.');
+                            }
+                            throw new Error(data['Information']);
+                        }
+                        
                         return data;
                     } catch (err) {
+                        console.error('❌ API 호출 실패:', err);
                         throw err;
                     }
                 }
