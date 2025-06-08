@@ -1,0 +1,816 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Alpha Vantage 재무제표 분석기</title>
+    
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/tailwindcss/2.2.19/tailwind.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
+    
+    <style>
+        .hidden { display: none !important; }
+        .animate-spin { animation: spin 1s linear infinite; }
+        @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+        
+        .company-card {
+            transition: all 0.3s ease;
+            cursor: pointer;
+        }
+        .company-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(0,0,0,0.15);
+        }
+        
+        .api-setup {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        }
+    </style>
+</head>
+
+<body class="bg-gray-100 min-h-screen">
+    <div class="container mx-auto p-4 max-w-6xl">
+        <!-- API 키 설정 -->
+        <div id="apiSetup" class="api-setup text-white rounded-lg p-6 mb-6">
+            <h2 class="text-xl font-bold mb-4">
+                <i class="fas fa-key mr-2"></i>Alpha Vantage API 키 설정
+            </h2>
+            
+            <div class="grid md:grid-cols-2 gap-6">
+                <div>
+                    <h3 class="font-semibold mb-2">1️⃣ 무료 API 키 받기</h3>
+                    <p class="text-sm opacity-90 mb-3">
+                        Alpha Vantage에서 무료 API 키를 받아주세요 (월 500회 무료)
+                    </p>
+                    <a href="https://www.alphavantage.co/support/#api-key" target="_blank" 
+                       class="inline-block bg-white text-purple-600 px-4 py-2 rounded-lg font-medium hover:bg-gray-100 transition-colors">
+                        <i class="fas fa-external-link-alt mr-2"></i>무료 API 키 받기
+                    </a>
+                </div>
+                
+                <div>
+                    <h3 class="font-semibold mb-2">2️⃣ API 키 입력</h3>
+                    <div class="flex gap-2">
+                        <input type="text" id="apiKeyInput" placeholder="API 키를 입력하세요" 
+                               class="flex-1 px-3 py-2 text-black rounded-lg">
+                        <button onclick="saveApiKey()" 
+                                class="bg-green-500 hover:bg-green-600 px-4 py-2 rounded-lg font-medium transition-colors">
+                            저장
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 헤더 -->
+        <header class="text-center mb-8 bg-white rounded-lg shadow-md p-6">
+            <h1 class="text-3xl font-bold text-blue-600 mb-2">
+                <i class="fas fa-chart-line mr-2"></i>실제 재무제표 분석기
+            </h1>
+            <p class="text-gray-600">Alpha Vantage API로 실제 재무데이터를 분석합니다!</p>
+            <div id="apiStatus" class="mt-3 text-sm">
+                <span class="bg-red-100 text-red-800 px-3 py-1 rounded-full">
+                    <i class="fas fa-exclamation-circle mr-1"></i>API 키가 필요합니다
+                </span>
+            </div>
+        </header>
+
+        <!-- 분석 도구 -->
+        <div id="analysisTools" class="hidden">
+            <!-- 기업 검색 -->
+            <div class="bg-white rounded-lg shadow-md p-6 mb-6">
+                <h2 class="text-xl font-semibold mb-4 text-center">
+                    <i class="fas fa-search mr-2 text-blue-500"></i>기업 검색
+                </h2>
+                
+                <div class="max-w-md mx-auto mb-6">
+                    <div class="relative">
+                        <input type="text" id="searchInput" placeholder="티커 심볼 입력 (예: AAPL, MSFT)" 
+                               class="w-full px-4 py-3 pr-12 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                               onkeypress="handleEnterKey(event)">
+                        <button onclick="searchCompany()" 
+                                class="absolute right-2 top-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
+                            <i class="fas fa-search"></i>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- 인기 기업 -->
+                <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3">
+                    <div class="company-card bg-blue-50 p-3 rounded-lg border-2 border-blue-200" onclick="analyzeCompany('AAPL')">
+                        <div class="text-center">
+                            <div class="text-xl mb-1">🍎</div>
+                            <div class="font-semibold text-blue-800 text-sm">Apple</div>
+                            <div class="text-xs text-blue-600">AAPL</div>
+                        </div>
+                    </div>
+                    
+                    <div class="company-card bg-green-50 p-3 rounded-lg border-2 border-green-200" onclick="analyzeCompany('MSFT')">
+                        <div class="text-center">
+                            <div class="text-xl mb-1">🪟</div>
+                            <div class="font-semibold text-green-800 text-sm">Microsoft</div>
+                            <div class="text-xs text-green-600">MSFT</div>
+                        </div>
+                    </div>
+                    
+                    <div class="company-card bg-red-50 p-3 rounded-lg border-2 border-red-200" onclick="analyzeCompany('GOOGL')">
+                        <div class="text-center">
+                            <div class="text-xl mb-1">🔍</div>
+                            <div class="font-semibold text-red-800 text-sm">Google</div>
+                            <div class="text-xs text-red-600">GOOGL</div>
+                        </div>
+                    </div>
+
+                    <div class="company-card bg-purple-50 p-3 rounded-lg border-2 border-purple-200" onclick="analyzeCompany('TSLA')">
+                        <div class="text-center">
+                            <div class="text-xl mb-1">⚡</div>
+                            <div class="font-semibold text-purple-800 text-sm">Tesla</div>
+                            <div class="text-xs text-purple-600">TSLA</div>
+                        </div>
+                    </div>
+
+                    <div class="company-card bg-indigo-50 p-3 rounded-lg border-2 border-indigo-200" onclick="analyzeCompany('AMZN')">
+                        <div class="text-center">
+                            <div class="text-xl mb-1">📦</div>
+                            <div class="font-semibold text-indigo-800 text-sm">Amazon</div>
+                            <div class="text-xs text-indigo-600">AMZN</div>
+                        </div>
+                    </div>
+
+                    <div class="company-card bg-yellow-50 p-3 rounded-lg border-2 border-yellow-200" onclick="analyzeCompany('NVDA')">
+                        <div class="text-center">
+                            <div class="text-xl mb-1">🎮</div>
+                            <div class="font-semibold text-yellow-800 text-sm">NVIDIA</div>
+                            <div class="text-xs text-yellow-600">NVDA</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- API 사용량 -->
+                <div class="mt-6 text-center">
+                    <span class="text-sm text-gray-600">
+                        API 사용량: <span id="apiUsage" class="font-semibold text-blue-600">0</span>/25 (세션)
+                    </span>
+                </div>
+            </div>
+
+            <!-- 로딩 -->
+            <div id="loading" class="hidden text-center py-12">
+                <div class="animate-spin rounded-full h-16 w-16 border-b-4 border-blue-600 mx-auto mb-4"></div>
+                <p class="text-gray-600 text-lg">Alpha Vantage에서 실제 데이터 가져오는 중...</p>
+                <div class="mt-2">
+                    <div class="bg-blue-200 rounded-full h-2 w-64 mx-auto">
+                        <div id="progressBar" class="bg-blue-600 h-2 rounded-full transition-all duration-300" style="width: 0%"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 에러 메시지 -->
+            <div id="errorMessage" class="hidden bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded-lg mb-6">
+                <div class="flex items-center">
+                    <i class="fas fa-exclamation-triangle mr-2"></i>
+                    <span id="errorText"></span>
+                </div>
+            </div>
+
+            <!-- 분석 결과 -->
+            <div id="analysisResult" class="hidden">
+                <!-- 기업 정보 -->
+                <div class="bg-gradient-to-r from-green-600 to-blue-600 text-white rounded-lg p-6 mb-6">
+                    <h2 id="companyName" class="text-2xl font-bold mb-2"></h2>
+                    <p id="companyInfo" class="opacity-90"></p>
+                    <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mt-4">
+                        <div class="text-center">
+                            <div id="marketCap" class="text-lg font-bold">-</div>
+                            <div class="text-sm opacity-90">시가총액</div>
+                        </div>
+                        <div class="text-center">
+                            <div id="peRatio" class="text-lg font-bold">-</div>
+                            <div class="text-sm opacity-90">PER</div>
+                        </div>
+                        <div class="text-center">
+                            <div id="dividendYield" class="text-lg font-bold">-</div>
+                            <div class="text-sm opacity-90">배당률</div>
+                        </div>
+                        <div class="text-center">
+                            <div id="bookValue" class="text-lg font-bold">-</div>
+                            <div class="text-sm opacity-90">장부가</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 재무제표 -->
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+                    <div class="bg-white rounded-lg shadow-md p-6">
+                        <h3 class="text-lg font-semibold mb-4">손익계산서</h3>
+                        <div id="incomeStatement" class="space-y-3">
+                            <!-- 동적 생성 -->
+                        </div>
+                    </div>
+
+                    <div class="bg-white rounded-lg shadow-md p-6">
+                        <h3 class="text-lg font-semibold mb-4">재무상태표</h3>
+                        <div id="balanceSheet" class="space-y-3">
+                            <!-- 동적 생성 -->
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 차트 -->
+                <div class="bg-white rounded-lg shadow-md p-6">
+                    <h3 class="text-lg font-semibold mb-4 text-center">재무 성과 차트</h3>
+                    <div class="relative h-96">
+                        <canvas id="financialChart"></canvas>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // 전역 변수 (메모리만 사용)
+        let currentChart = null;
+        let apiKey = null;
+        let apiUsageCount = 0;
+        let loadingProgress = null;
+
+        // API 키 저장 (메모리만)
+        function saveApiKey() {
+            const keyInput = document.getElementById('apiKeyInput');
+            const key = keyInput.value.trim();
+            
+            if (!key) {
+                alert('API 키를 입력해주세요.');
+                return;
+            }
+            
+            apiKey = key;
+            
+            document.getElementById('apiSetup').style.display = 'none';
+            document.getElementById('analysisTools').classList.remove('hidden');
+            document.getElementById('apiStatus').innerHTML = `
+                <span class="bg-green-100 text-green-800 px-3 py-1 rounded-full">
+                    <i class="fas fa-check-circle mr-1"></i>API 키 설정됨
+                </span>
+            `;
+            
+            showSuccess('✅ API 키 설정 완료! 이제 기업을 검색해보세요.');
+        }
+
+        // 엔터키 처리
+        function handleEnterKey(event) {
+            if (event.key === 'Enter') {
+                searchCompany();
+            }
+        }
+
+        // 기업 검색
+        function searchCompany() {
+            const symbol = document.getElementById('searchInput').value.trim().toUpperCase();
+            if (!symbol) {
+                showError('티커 심볼을 입력해주세요.');
+                return;
+            }
+            analyzeCompany(symbol);
+        }
+
+        // 기업 분석
+        async function analyzeCompany(symbol) {
+            if (!apiKey) {
+                showError('먼저 API 키를 설정해주세요.');
+                return;
+            }
+
+            hideError();
+            showLoading(true, `${symbol} 실제 데이터 분석 중...`);
+            hideResult();
+            
+            try {
+                console.log(`🔍 ${symbol} 분석 시작...`);
+                console.log('사용 중인 API 키:', apiKey.substring(0, 3) + '...' + apiKey.substring(apiKey.length - 3));
+                
+                // Alpha Vantage API 호출
+                const [overview, income, balance] = await Promise.all([
+                    callAlphaVantageAPI('OVERVIEW', symbol),
+                    callAlphaVantageAPI('INCOME_STATEMENT', symbol),
+                    callAlphaVantageAPI('BALANCE_SHEET', symbol)
+                ]);
+
+                if (!overview || !overview.Symbol) {
+                    throw new Error(`${symbol} 기업을 찾을 수 없습니다. 유효한 티커 심볼인지 확인해주세요.`);
+                }
+
+                // 데이터 표시
+                displayFinancialData(symbol, overview, income, balance);
+                createChart(overview, income, balance);
+                
+                showResult();
+                showSuccess(`✅ ${overview.Name || symbol} 분석 완료!`);
+                updateApiUsage();
+
+            } catch (error) {
+                console.error('❌ 분석 실패:', error);
+                showError(`분석 실패: ${error.message}`);
+            } finally {
+                showLoading(false);
+            }
+        }
+
+        // Alpha Vantage API 호출 (CORS 프록시 사용)
+        async function callAlphaVantageAPI(functionName, symbol) {
+            // CORS 프록시 옵션 목록 (여러 옵션을 제공하여 하나가 실패하면 다른 것을 시도)
+            const proxyOptions = [
+                'https://corsproxy.io/?',
+                'https://cors-anywhere.herokuapp.com/',
+                'https://api.allorigins.win/raw?url=',
+                'https://api.codetabs.com/v1/proxy?quest=',
+                'DIRECT' // 직접 요청 시도 (no-cors 모드)
+            ];
+            
+            // 기본 URL
+            const targetUrl = `https://www.alphavantage.co/query?function=${functionName}&symbol=${symbol}&apikey=${apiKey}`;
+            
+            // 모든 프록시를 시도
+            let lastError = null;
+            for (const proxyUrl of proxyOptions) {
+                try {
+                    console.log(`📡 API 호출 시도: ${functionName} for ${symbol} (프록시: ${proxyUrl})`);
+                    
+                    let url, fetchOptions;
+                    
+                    if (proxyUrl === 'DIRECT') {
+                        // 직접 요청 (no-cors 모드와 표준 모드 모두 시도)
+                        url = targetUrl;
+                        
+                        // 먼저 일반 모드로 시도
+                        try {
+                            console.log('직접 요청 시도 (표준 모드)');
+                            const directResponse = await fetch(url, {
+                                method: 'GET',
+                                headers: {
+                                    'Content-Type': 'application/json'
+                                }
+                            });
+                            
+                            if (directResponse.ok) {
+                                const data = await directResponse.json();
+                                if (!data['Error Message'] && !data['Information'] && !data['Note']) {
+                                    console.log('✅ 직접 요청 성공 (표준 모드)');
+                                    return data;
+                                }
+                            }
+                        } catch (directError) {
+                            console.warn('직접 요청 실패 (표준 모드):', directError);
+                        }
+                        
+                        // no-cors 모드로 시도 (브라우저는 응답을 읽지 못하지만 요청은 수행됨)
+                        console.log('직접 요청 시도 (no-cors 모드)');
+                        fetchOptions = {
+                            method: 'GET',
+                            mode: 'no-cors',
+                            cache: 'no-cache',
+                            headers: {
+                                'Content-Type': 'application/json'
+                            }
+                        };
+                    } else {
+                        // 프록시 요청
+                        url = proxyUrl.includes('?url=') || proxyUrl.includes('?quest=')
+                            ? proxyUrl + encodeURIComponent(targetUrl)
+                            : proxyUrl + targetUrl;
+                        
+                        fetchOptions = {
+                            method: 'GET',
+                            headers: {
+                                'Content-Type': 'application/json',
+                                'Origin': window.location.origin
+                            }
+                        };
+                    }
+                    
+                    const response = await fetch(url, fetchOptions);
+                    
+                    // no-cors 모드에서는 응답 타입이 'opaque'이며 내용을 읽을 수 없음
+                    if (response.type === 'opaque') {
+                        console.log('⚠️ no-cors 모드 응답 (불투명): 내용을 확인할 수 없어 다음 프록시로 넘어감');
+                        continue;
+                    }
+                    
+                    if (!response.ok) {
+                        console.warn(`프록시 ${proxyUrl} 실패: HTTP ${response.status}`);
+                        lastError = new Error(`HTTP 오류: ${response.status}`);
+                        continue; // 다음 프록시 시도
+                    }
+                    
+                    const data = await response.json();
+                    
+                    // API 에러 체크
+                    if (data['Note']) {
+                        lastError = new Error('API 호출 한도를 초과했습니다. 잠시 후 다시 시도해주세요.');
+                        console.warn('API 한도 초과, 다음 프록시 시도');
+                        continue; // 다음 프록시 시도
+                    }
+                    
+                    if (data['Error Message']) {
+                        lastError = new Error(data['Error Message']);
+                        console.warn(`API 에러: ${data['Error Message']}`);
+                        continue; // 다음 프록시 시도
+                    }
+
+                    if (data['Information']) {
+                        lastError = new Error('API 키가 유효하지 않거나 사용량을 초과했습니다.');
+                        console.warn('API 키 에러, 다음 프록시 시도');
+                        continue; // 다음 프록시 시도
+                    }
+                    
+                    // 데이터가 실제로 있는지 확인
+                    if (functionName === 'OVERVIEW' && !data.Symbol) {
+                        lastError = new Error(`${symbol}에 대한 개요 데이터가 없습니다.`);
+                        console.warn('개요 데이터 없음, 다음 프록시 시도');
+                        continue; // 다음 프록시 시도
+                    }
+                    
+                    if (functionName === 'INCOME_STATEMENT' && (!data.annualReports || data.annualReports.length === 0)) {
+                        lastError = new Error(`${symbol}에 대한 손익계산서 데이터가 없습니다.`);
+                        console.warn('손익계산서 데이터 없음, 다음 프록시 시도');
+                        continue; // 다음 프록시 시도
+                    }
+                    
+                    if (functionName === 'BALANCE_SHEET' && (!data.annualReports || data.annualReports.length === 0)) {
+                        lastError = new Error(`${symbol}에 대한 재무상태표 데이터가 없습니다.`);
+                        console.warn('재무상태표 데이터 없음, 다음 프록시 시도');
+                        continue; // 다음 프록시 시도
+                    }
+                    
+                    // 성공!
+                    console.log(`✅ ${functionName} 데이터 수신 완료 (프록시: ${proxyUrl})`);
+                    return data;
+                    
+                } catch (error) {
+                    console.error(`❌ 프록시 ${proxyUrl} 사용 중 오류 발생:`, error);
+                    lastError = error;
+                    // 다음 프록시 시도
+                }
+            }
+            
+            // 모든 프록시가 실패한 경우
+            console.error(`❌ 모든 프록시가 실패했습니다. (${functionName})`);
+            throw lastError || new Error('알 수 없는 오류로 API 호출에 실패했습니다.');
+        }
+
+        // 재무 데이터 표시
+        function displayFinancialData(symbol, overview, income, balance) {
+            try {
+                // 기업 정보
+                document.getElementById('companyName').textContent = overview.Name || symbol;
+                document.getElementById('companyInfo').textContent = `${symbol} | ${overview.Sector || 'N/A'} | ${overview.Country || 'N/A'}`;
+                
+                // 주요 지표
+                document.getElementById('marketCap').textContent = formatNumber(overview.MarketCapitalization) || 'N/A';
+                document.getElementById('peRatio').textContent = overview.PERatio && overview.PERatio !== 'None' ? parseFloat(overview.PERatio).toFixed(1) + '배' : 'N/A';
+                document.getElementById('dividendYield').textContent = overview.DividendYield && overview.DividendYield !== 'None' ? (parseFloat(overview.DividendYield) * 100).toFixed(2) + '%' : 'N/A';
+                document.getElementById('bookValue').textContent = overview.BookValue && overview.BookValue !== 'None' ? '$' + parseFloat(overview.BookValue).toFixed(2) : 'N/A';
+
+                // 손익계산서
+                const latestIncome = income?.annualReports?.[0];
+                const incomeItems = [
+                    { name: '매출액', value: latestIncome?.totalRevenue, suffix: '' },
+                    { name: '영업이익', value: latestIncome?.operatingIncome, suffix: '' },
+                    { name: '순이익', value: latestIncome?.netIncome, suffix: '' },
+                    { name: 'EPS', value: latestIncome?.reportedEPS, suffix: '$' }
+                ];
+                
+                displayItems('incomeStatement', incomeItems);
+
+                // 재무상태표
+                const latestBalance = balance?.annualReports?.[0];
+                const balanceItems = [
+                    { name: '총자산', value: latestBalance?.totalAssets, suffix: '' },
+                    { name: '총부채', value: latestBalance?.totalLiabilities, suffix: '' },
+                    { name: '주주지분', value: latestBalance?.totalShareholderEquity, suffix: '' },
+                    { name: '현금', value: latestBalance?.cashAndCashEquivalentsAtCarryingValue, suffix: '' }
+                ];
+                
+                displayItems('balanceSheet', balanceItems);
+
+            } catch (error) {
+                console.error('데이터 표시 오류:', error);
+                showError('데이터 표시 중 오류가 발생했습니다.');
+            }
+        }
+
+        // 항목 표시
+        function displayItems(containerId, items) {
+            const container = document.getElementById(containerId);
+            if (!container) return;
+            
+            let html = '';
+
+            items.forEach(item => {
+                let displayValue = 'N/A';
+                
+                if (item.value && item.value !== 'None' && !isNaN(item.value)) {
+                    if (item.suffix === '$') {
+                        displayValue = '$' + parseFloat(item.value).toFixed(2);
+                    } else {
+                        displayValue = formatNumber(item.value);
+                    }
+                }
+
+                html += `
+                    <div class="flex justify-between items-center p-3 bg-gray-50 rounded-lg">
+                        <span class="font-medium text-gray-700">${item.name}</span>
+                        <span class="font-bold text-blue-600">${displayValue}</span>
+                    </div>
+                `;
+            });
+
+            container.innerHTML = html;
+        }
+
+        // 차트 생성
+        function createChart(overview, income, balance) {
+            const ctx = document.getElementById('financialChart');
+            if (!ctx) return;
+            
+            try {
+                if (currentChart) {
+                    currentChart.destroy();
+                    currentChart = null;
+                }
+
+                const years = [];
+                const revenues = [];
+                const profits = [];
+
+                if (income?.annualReports && income.annualReports.length > 0) {
+                    income.annualReports.slice(0, 4).reverse().forEach(report => {
+                        const year = report.fiscalDateEnding?.substring(0, 4) || '';
+                        const revenue = parseFloat(report.totalRevenue || 0) / 1000000000;
+                        const profit = parseFloat(report.netIncome || 0) / 1000000000;
+                        
+                        if (year && !isNaN(revenue) && !isNaN(profit)) {
+                            years.push(year);
+                            revenues.push(revenue);
+                            profits.push(profit);
+                        }
+                    });
+                }
+
+                if (years.length === 0) {
+                    ctx.getContext('2d').clearRect(0, 0, ctx.width, ctx.height);
+                    const context = ctx.getContext('2d');
+                    context.font = '20px Arial';
+                    context.textAlign = 'center';
+                    context.fillText('차트 데이터가 없습니다', ctx.width / 2, ctx.height / 2);
+                    return;
+                }
+
+                currentChart = new Chart(ctx.getContext('2d'), {
+                    type: 'line',
+                    data: {
+                        labels: years,
+                        datasets: [
+                            {
+                                label: '매출액 (십억$)',
+                                data: revenues,
+                                borderColor: 'rgb(59, 130, 246)',
+                                backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                                borderWidth: 3,
+                                tension: 0.4,
+                                fill: true
+                            },
+                            {
+                                label: '순이익 (십억$)',
+                                data: profits,
+                                borderColor: 'rgb(34, 197, 94)',
+                                backgroundColor: 'rgba(34, 197, 94, 0.1)',
+                                borderWidth: 3,
+                                tension: 0.4,
+                                fill: true
+                            }
+                        ]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            title: {
+                                display: true,
+                                text: '연도별 재무 성과 (Alpha Vantage 실제 데이터)',
+                                font: {
+                                    size: 16
+                                }
+                            },
+                            legend: {
+                                display: true,
+                                position: 'top'
+                            }
+                        },
+                        scales: {
+                            y: {
+                                beginAtZero: true,
+                                title: {
+                                    display: true,
+                                    text: '금액 (십억 달러)'
+                                }
+                            },
+                            x: {
+                                title: {
+                                    display: true,
+                                    text: '연도'
+                                }
+                            }
+                        }
+                    }
+                });
+
+            } catch (error) {
+                console.error('차트 생성 오류:', error);
+            }
+        }
+
+        // 숫자 포맷팅
+        function formatNumber(num) {
+            if (!num || isNaN(num) || num === 'None') return 'N/A';
+            
+            const numValue = parseFloat(num);
+            const absNum = Math.abs(numValue);
+            
+            if (absNum >= 1e12) return '$' + (numValue / 1e12).toFixed(1) + 'T';
+            if (absNum >= 1e9) return '$' + (numValue / 1e9).toFixed(1) + 'B';
+            if (absNum >= 1e6) return '$' + (numValue / 1e6).toFixed(1) + 'M';
+            if (absNum >= 1e3) return '$' + (numValue / 1e3).toFixed(1) + 'K';
+            
+            return '$' + numValue.toLocaleString();
+        }
+
+        // 로딩 표시
+        function showLoading(show, message = '처리 중...') {
+            const loading = document.getElementById('loading');
+            if (!loading) return;
+            
+            if (show) {
+                loading.classList.remove('hidden');
+                const loadingText = loading.querySelector('p');
+                if (loadingText) loadingText.textContent = message;
+                startProgress();
+            } else {
+                loading.classList.add('hidden');
+                stopProgress();
+            }
+        }
+
+        // 진행바
+        function startProgress() {
+            const progressBar = document.getElementById('progressBar');
+            if (!progressBar) return;
+            
+            let progress = 0;
+            
+            if (loadingProgress) {
+                clearInterval(loadingProgress);
+            }
+            
+            loadingProgress = setInterval(() => {
+                progress += Math.random() * 15;
+                if (progress > 95) progress = 95;
+                progressBar.style.width = progress + '%';
+            }, 300);
+        }
+
+        function stopProgress() {
+            if (loadingProgress) {
+                clearInterval(loadingProgress);
+                loadingProgress = null;
+                
+                const progressBar = document.getElementById('progressBar');
+                if (progressBar) {
+                    progressBar.style.width = '100%';
+                    setTimeout(() => {
+                        progressBar.style.width = '0%';
+                    }, 500);
+                }
+            }
+        }
+
+        // API 사용량 업데이트 (메모리만)
+        function updateApiUsage() {
+            apiUsageCount++;
+            const usageElement = document.getElementById('apiUsage');
+            if (usageElement) {
+                usageElement.textContent = apiUsageCount;
+                
+                if (apiUsageCount > 20) {
+                    usageElement.className = 'font-semibold text-red-600';
+                } else if (apiUsageCount > 15) {
+                    usageElement.className = 'font-semibold text-yellow-600';
+                } else {
+                    usageElement.className = 'font-semibold text-blue-600';
+                }
+            }
+        }
+
+        // 결과 표시/숨기기
+        function showResult() {
+            const result = document.getElementById('analysisResult');
+            if (result) {
+                result.classList.remove('hidden');
+                result.scrollIntoView({ behavior: 'smooth' });
+            }
+        }
+
+        function hideResult() {
+            const result = document.getElementById('analysisResult');
+            if (result) {
+                result.classList.add('hidden');
+            }
+        }
+
+        // 에러 처리
+        function showError(message) {
+            const errorDiv = document.getElementById('errorMessage');
+            const errorText = document.getElementById('errorText');
+            
+            if (errorDiv && errorText) {
+                // API 키 관련 오류에 대해 추가 안내 포함
+                if (message.includes('API 키가 유효하지 않') || message.includes('Invalid API call')) {
+                    message += `<br><span class="block mt-2 text-sm">💡 API 키가 올바른지 확인하거나, <a href="https://www.alphavantage.co/support/#api-key" target="_blank" class="underline">새 키를 발급</a>받아보세요.</span>`;
+                }
+                
+                // CORS 관련 오류에 대한 안내
+                if (message.includes('Failed to fetch') || message.includes('Network Error') || message.includes('CORS')) {
+                    message += `<br><span class="block mt-2 text-sm">💡 CORS 정책으로 인한 오류일 수 있습니다. <a href="https://cors-anywhere.herokuapp.com/corsdemo" target="_blank" class="underline">CORS Anywhere 허용</a>을 활성화하세요.</span>`;
+                }
+                
+                // 개발자 도구 안내
+                message += `<br><span class="block mt-2 text-xs opacity-80">자세한 오류는 개발자 도구(F12)의 콘솔 탭에서 확인하세요.</span>`;
+                
+                errorText.innerHTML = message;
+                errorDiv.classList.remove('hidden');
+                errorDiv.scrollIntoView({ behavior: 'smooth' });
+                
+                // 8초 후 자동으로 숨김
+                setTimeout(() => hideError(), 8000);
+            }
+        }
+
+        function hideError() {
+            const errorDiv = document.getElementById('errorMessage');
+            if (errorDiv) {
+                errorDiv.classList.add('hidden');
+            }
+        }
+
+        // 성공 메시지
+        function showSuccess(message) {
+            const successDiv = document.createElement('div');
+            successDiv.className = 'fixed top-4 right-4 bg-green-500 text-white px-6 py-3 rounded-lg shadow-lg z-50';
+            successDiv.innerHTML = `<i class="fas fa-check-circle mr-2"></i>${message}`;
+            
+            document.body.appendChild(successDiv);
+            
+            setTimeout(() => {
+                if (document.body.contains(successDiv)) {
+                    document.body.removeChild(successDiv);
+                }
+            }, 4000);
+        }
+
+        // 초기화 (localStorage 완전 제거)
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log('🚀 Alpha Vantage 분석기 준비 완료!');
+            
+            // 디버깅 정보 표시
+            console.log('브라우저 정보:', navigator.userAgent);
+            console.log('현재 URL:', window.location.href);
+            
+            // API 키가 URL 파라미터에 있는지 확인
+            const urlParams = new URLSearchParams(window.location.search);
+            const keyFromUrl = urlParams.get('apikey');
+            if (keyFromUrl) {
+                console.log('URL에서 API 키를 찾았습니다!');
+                document.getElementById('apiKeyInput').value = keyFromUrl;
+                saveApiKey();
+            }
+            
+            // 개발자 도구 확인 안내
+            console.log('%c🛠️ 분석에 실패한다면 개발자 도구(F12)의 콘솔 탭을 확인해주세요!', 'color: red; font-weight: bold; font-size: 14px;');
+            console.log('%c✅ URL에 ?apikey=YOUR_API_KEY를 추가하면 자동으로 API 키가 설정됩니다!', 'color: green; font-weight: bold; font-size: 14px;');
+        });
+
+        // 정리
+        window.addEventListener('beforeunload', function() {
+            if (currentChart) {
+                currentChart.destroy();
+                currentChart = null;
+            }
+            if (loadingProgress) {
+                clearInterval(loadingProgress);
+                loadingProgress = null;
+            }
+        });
+    </script>
+</body>
+</html>
