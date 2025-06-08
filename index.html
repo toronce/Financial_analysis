@@ -318,39 +318,94 @@
 
         // Alpha Vantage API 호출 (CORS 프록시 사용)
         async function callAlphaVantageAPI(functionName, symbol) {
-            const proxyUrl = 'https://api.allorigins.win/raw?url=';
-            const targetUrl = `https://www.alphavantage.co/query?function=${functionName}&symbol=${symbol}&apikey=${apiKey}`;
-            const url = proxyUrl + encodeURIComponent(targetUrl);
+            // CORS 프록시 옵션 목록 (여러 옵션을 제공하여 하나가 실패하면 다른 것을 시도)
+            const proxyOptions = [
+                'https://corsproxy.io/?',
+                'https://cors-anywhere.herokuapp.com/',
+                'https://api.allorigins.win/raw?url='
+            ];
             
-            try {
-                console.log(`📡 API 호출: ${functionName} for ${symbol}`);
-                const response = await fetch(url);
-                
-                if (!response.ok) {
-                    throw new Error(`HTTP 오류: ${response.status}`);
-                }
-                
-                const data = await response.json();
-                
-                if (data['Note']) {
-                    throw new Error('API 호출 한도를 초과했습니다. 잠시 후 다시 시도해주세요.');
-                }
-                
-                if (data['Error Message']) {
-                    throw new Error(data['Error Message']);
-                }
+            // 기본 URL
+            const targetUrl = `https://www.alphavantage.co/query?function=${functionName}&symbol=${symbol}&apikey=${apiKey}`;
+            
+            // 모든 프록시를 시도
+            let lastError = null;
+            for (const proxyUrl of proxyOptions) {
+                try {
+                    console.log(`📡 API 호출 시도: ${functionName} for ${symbol} (프록시: ${proxyUrl})`);
+                    
+                    const url = proxyUrl.includes('?url=') 
+                        ? proxyUrl + encodeURIComponent(targetUrl)
+                        : proxyUrl + targetUrl;
+                    
+                    const response = await fetch(url, {
+                        method: 'GET',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Origin': window.location.origin
+                        }
+                    });
+                    
+                    if (!response.ok) {
+                        console.warn(`프록시 ${proxyUrl} 실패: HTTP ${response.status}`);
+                        lastError = new Error(`HTTP 오류: ${response.status}`);
+                        continue; // 다음 프록시 시도
+                    }
+                    
+                    const data = await response.json();
+                    
+                    // API 에러 체크
+                    if (data['Note']) {
+                        lastError = new Error('API 호출 한도를 초과했습니다. 잠시 후 다시 시도해주세요.');
+                        console.warn('API 한도 초과, 다음 프록시 시도');
+                        continue; // 다음 프록시 시도
+                    }
+                    
+                    if (data['Error Message']) {
+                        lastError = new Error(data['Error Message']);
+                        console.warn(`API 에러: ${data['Error Message']}`);
+                        continue; // 다음 프록시 시도
+                    }
 
-                if (data['Information']) {
-                    throw new Error('API 키가 유효하지 않거나 사용량을 초과했습니다.');
+                    if (data['Information']) {
+                        lastError = new Error('API 키가 유효하지 않거나 사용량을 초과했습니다.');
+                        console.warn('API 키 에러, 다음 프록시 시도');
+                        continue; // 다음 프록시 시도
+                    }
+                    
+                    // 데이터가 실제로 있는지 확인
+                    if (functionName === 'OVERVIEW' && !data.Symbol) {
+                        lastError = new Error(`${symbol}에 대한 개요 데이터가 없습니다.`);
+                        console.warn('개요 데이터 없음, 다음 프록시 시도');
+                        continue; // 다음 프록시 시도
+                    }
+                    
+                    if (functionName === 'INCOME_STATEMENT' && (!data.annualReports || data.annualReports.length === 0)) {
+                        lastError = new Error(`${symbol}에 대한 손익계산서 데이터가 없습니다.`);
+                        console.warn('손익계산서 데이터 없음, 다음 프록시 시도');
+                        continue; // 다음 프록시 시도
+                    }
+                    
+                    if (functionName === 'BALANCE_SHEET' && (!data.annualReports || data.annualReports.length === 0)) {
+                        lastError = new Error(`${symbol}에 대한 재무상태표 데이터가 없습니다.`);
+                        console.warn('재무상태표 데이터 없음, 다음 프록시 시도');
+                        continue; // 다음 프록시 시도
+                    }
+                    
+                    // 성공!
+                    console.log(`✅ ${functionName} 데이터 수신 완료 (프록시: ${proxyUrl})`);
+                    return data;
+                    
+                } catch (error) {
+                    console.error(`❌ 프록시 ${proxyUrl} 사용 중 오류 발생:`, error);
+                    lastError = error;
+                    // 다음 프록시 시도
                 }
-                
-                console.log(`✅ ${functionName} 데이터 수신 완료`);
-                return data;
-                
-            } catch (error) {
-                console.error(`❌ API 호출 실패 (${functionName}):`, error);
-                throw error;
             }
+            
+            // 모든 프록시가 실패한 경우
+            console.error(`❌ 모든 프록시가 실패했습니다. (${functionName})`);
+            throw lastError || new Error('알 수 없는 오류로 API 호출에 실패했습니다.');
         }
 
         // 재무 데이터 표시
@@ -661,6 +716,18 @@
         // 초기화 (localStorage 완전 제거)
         document.addEventListener('DOMContentLoaded', function() {
             console.log('🚀 Alpha Vantage 분석기 준비 완료!');
+            
+            // 디버깅 정보 표시
+            console.log('브라우저 정보:', navigator.userAgent);
+            console.log('현재 URL:', window.location.href);
+            
+            // API 키가 URL 파라미터에 있는지 확인
+            const urlParams = new URLSearchParams(window.location.search);
+            const keyFromUrl = urlParams.get('apikey');
+            if (keyFromUrl) {
+                document.getElementById('apiKeyInput').value = keyFromUrl;
+                saveApiKey();
+            }
         });
 
         // 정리
