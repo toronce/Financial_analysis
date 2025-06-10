@@ -236,7 +236,7 @@
         let loadingProgress = null;
 
         // API 키 저장 (메모리만)
-        function saveApiKey() {
+        async function saveApiKey() {
             const keyInput = document.getElementById('apiKeyInput');
             const key = keyInput.value.trim();
             
@@ -244,18 +244,52 @@
                 alert('API 키를 입력해주세요.');
                 return;
             }
+
+            // API 키 형식 검사
+            if (key.length < 10) {
+                alert('API 키가 올바르지 않습니다. Alpha Vantage에서 발급받은 키를 입력해주세요.');
+                return;
+            }
             
-            apiKey = key;
+            showLoading(true, 'API 키 유효성 검사 중...');
             
-            document.getElementById('apiSetup').style.display = 'none';
-            document.getElementById('analysisTools').classList.remove('hidden');
-            document.getElementById('apiStatus').innerHTML = `
-                <span class="bg-green-100 text-green-800 px-3 py-1 rounded-full">
-                    <i class="fas fa-check-circle mr-1"></i>API 키 설정됨
-                </span>
-            `;
-            
-            showSuccess('✅ API 키 설정 완료! 이제 기업을 검색해보세요.');
+            try {
+                // API 키 테스트
+                const testUrl = `http://localhost:3000/av?function=TIME_SERIES_INTRADAY&symbol=IBM&interval=5min&apikey=${key}`;
+                console.log('🔍 API 키 테스트 요청:', testUrl.replace(key, '***'));
+                
+                const response = await fetch(testUrl);
+                const data = await response.json();
+                
+                if (data['Note'] || data['Error Message'] || data['Information']) {
+                    throw new Error('API 키가 유효하지 않습니다.');
+                }
+                
+                // API 키 저장
+                apiKey = key;
+                
+                document.getElementById('apiSetup').style.display = 'none';
+                document.getElementById('analysisTools').classList.remove('hidden');
+                document.getElementById('apiStatus').innerHTML = `
+                    <span class="bg-green-100 text-green-800 px-3 py-1 rounded-full">
+                        <i class="fas fa-check-circle mr-1"></i>API 키 설정됨
+                    </span>
+                `;
+                
+                showSuccess('✅ API 키 설정 완료! 이제 기업을 검색해보세요.');
+                
+            } catch (error) {
+                console.error('API 키 테스트 실패:', error);
+                showError(`API 키 테스트 실패: ${error.message}<br>
+                    <span class="block mt-2 text-sm">💡 다음을 확인해주세요:</span>
+                    <ul class="list-disc list-inside mt-1 text-sm">
+                        <li>API 키가 올바른지 확인</li>
+                        <li>프록시 서버가 실행 중인지 확인</li>
+                        <li>브라우저 콘솔(F12)에서 자세한 오류 확인</li>
+                    </ul>`);
+            } finally {
+                showLoading(false);
+            }
         }
 
         // 엔터키 처리
@@ -297,7 +331,7 @@
                         throw new Error('유효한 API 키를 입력해주세요.');
                     }
 
-                    const url = `${proxyBase}?function=${functionName}&symbol=${symbol}&apikey=${apiKey}`;
+                    const url = `http://localhost:3000/av?function=${functionName}&symbol=${symbol}&apikey=${apiKey}`;
                     console.log(`📡 API 요청 URL: ${url.replace(apiKey, '***')}`);
                     
                     try {
@@ -313,6 +347,7 @@
                         
                         // API 에러 체크
                         if (data['Note']) {
+                            console.error('API Note:', data['Note']);
                             if (data['Note'].includes('API call frequency')) {
                                 throw new Error('API 호출 빈도 제한에 도달했습니다. 잠시 후 다시 시도해주세요.');
                             } else if (data['Note'].includes('API key')) {
@@ -322,10 +357,12 @@
                         }
                         
                         if (data['Error Message']) {
+                            console.error('API Error Message:', data['Error Message']);
                             throw new Error(data['Error Message']);
                         }
                         
                         if (data['Information']) {
+                            console.error('API Information:', data['Information']);
                             if (data['Information'].includes('API call frequency')) {
                                 throw new Error('API 호출 빈도 제한에 도달했습니다. 잠시 후 다시 시도해주세요.');
                             } else if (data['Information'].includes('API key')) {
@@ -341,13 +378,18 @@
                     }
                 }
                 
-                // 데이터 표시
-                const data = await callAlphaVantageAPI('OVERVIEW', symbol);
-                displayFinancialData(symbol, data);
-                createChart(data);
+                // 여러 API 동시 호출
+                const [overview, income, balance] = await Promise.all([
+                    callAlphaVantageAPI('OVERVIEW', symbol),
+                    callAlphaVantageAPI('INCOME_STATEMENT', symbol),
+                    callAlphaVantageAPI('BALANCE_SHEET', symbol)
+                ]);
+                // 통합 데이터 구조로 전달
+                displayFinancialData(symbol, overview, income, balance);
+                createChart(income);
                 
                 showResult();
-                showSuccess(`✅ ${data.Name || symbol} 분석 완료!`);
+                showSuccess(`✅ ${overview.Name || symbol} 분석 완료!`);
                 updateApiUsage();
 
             } catch (error) {
@@ -359,38 +401,36 @@
         }
 
         // 재무 데이터 표시
-        function displayFinancialData(symbol, data) {
+        function displayFinancialData(symbol, overview, income, balance) {
             try {
                 // 기업 정보
-                document.getElementById('companyName').textContent = data.Name || symbol;
-                document.getElementById('companyInfo').textContent = `${symbol} | ${data.Sector || 'N/A'} | ${data.Country || 'N/A'}`;
+                document.getElementById('companyName').textContent = overview.Name || symbol;
+                document.getElementById('companyInfo').textContent = `${symbol} | ${overview.Sector || 'N/A'} | ${overview.Country || 'N/A'}`;
                 
                 // 주요 지표
-                document.getElementById('marketCap').textContent = formatNumber(data.MarketCapitalization) || 'N/A';
-                document.getElementById('peRatio').textContent = data.PERatio && data.PERatio !== 'None' ? parseFloat(data.PERatio).toFixed(1) + '배' : 'N/A';
-                document.getElementById('dividendYield').textContent = data.DividendYield && data.DividendYield !== 'None' ? (parseFloat(data.DividendYield) * 100).toFixed(2) + '%' : 'N/A';
-                document.getElementById('bookValue').textContent = data.BookValue && data.BookValue !== 'None' ? '$' + parseFloat(data.BookValue).toFixed(2) : 'N/A';
+                document.getElementById('marketCap').textContent = formatNumber(overview.MarketCapitalization) || 'N/A';
+                document.getElementById('peRatio').textContent = overview.PERatio && overview.PERatio !== 'None' ? parseFloat(overview.PERatio).toFixed(1) + '배' : 'N/A';
+                document.getElementById('dividendYield').textContent = overview.DividendYield && overview.DividendYield !== 'None' ? (parseFloat(overview.DividendYield) * 100).toFixed(2) + '%' : 'N/A';
+                document.getElementById('bookValue').textContent = overview.BookValue && overview.BookValue !== 'None' ? '$' + parseFloat(overview.BookValue).toFixed(2) : 'N/A';
 
                 // 손익계산서
-                const latestIncome = data?.annualReports?.[0];
+                const latestIncome = income?.annualReports?.[0];
                 const incomeItems = [
                     { name: '매출액', value: latestIncome?.totalRevenue, suffix: '' },
                     { name: '영업이익', value: latestIncome?.operatingIncome, suffix: '' },
                     { name: '순이익', value: latestIncome?.netIncome, suffix: '' },
                     { name: 'EPS', value: latestIncome?.reportedEPS, suffix: '$' }
                 ];
-                
                 displayItems('incomeStatement', incomeItems);
 
                 // 재무상태표
-                const latestBalance = data?.annualReports?.[0];
+                const latestBalance = balance?.annualReports?.[0];
                 const balanceItems = [
                     { name: '총자산', value: latestBalance?.totalAssets, suffix: '' },
                     { name: '총부채', value: latestBalance?.totalLiabilities, suffix: '' },
                     { name: '주주지분', value: latestBalance?.totalShareholderEquity, suffix: '' },
                     { name: '현금', value: latestBalance?.cashAndCashEquivalentsAtCarryingValue, suffix: '' }
                 ];
-                
                 displayItems('balanceSheet', balanceItems);
 
             } catch (error) {
