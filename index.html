@@ -84,9 +84,14 @@
                     <i class="fas fa-search mr-2 text-blue-500"></i>기업 검색
                 </h2>
                 
+                <!-- 안내 문구 추가 -->
+                <div class="text-center text-blue-700 font-semibold mb-2">
+                    ※ 미국 상장기업(티커)만 검색 가능합니다.
+                </div>
+                
                 <div class="max-w-md mx-auto mb-6">
                     <div class="relative">
-                        <input type="text" id="searchInput" placeholder="티커 심볼 입력 (예: AAPL, MSFT)" 
+                        <input type="text" id="searchInput" placeholder="미국 주식 티커 입력 (예: AAPL, MSFT)" 
                                class="w-full px-4 py-3 pr-12 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                                onkeypress="handleEnterKey(event)">
                         <button onclick="searchCompany()" 
